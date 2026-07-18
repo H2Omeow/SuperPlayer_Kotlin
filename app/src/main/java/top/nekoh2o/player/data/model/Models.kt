@@ -217,6 +217,78 @@ data class WallpaperItem(
     val height: Int = 0
 )
 
+// ==================== 分类搜索 ====================
+// 搜索类型，对应网易云 /search?type= 参数
+enum class SearchType(val code: Int, val label: String) {
+    SONG(1, "单曲"),
+    ARTIST(100, "歌手"),
+    ALBUM(10, "专辑")
+}
+
+// 分类搜索 - 歌手 (type=100)
+@Serializable
+data class SearchArtistResp(
+    val code: Int = 0,
+    val result: SearchArtistResult? = null
+)
+@Serializable
+data class SearchArtistResult(
+    val artists: List<ArtistItem> = emptyList()
+)
+@Serializable
+data class ArtistItem(
+    val id: Long,
+    val name: String = "",
+    val picUrl: String? = null,
+    @SerialName("img1v1Url") val img1v1Url: String? = null
+)
+
+// 分类搜索 - 专辑 (type=10)
+@Serializable
+data class SearchAlbumResp(
+    val code: Int = 0,
+    val result: SearchAlbumResult? = null
+)
+@Serializable
+data class SearchAlbumResult(
+    val albums: List<AlbumItem> = emptyList()
+)
+@Serializable
+data class AlbumItem(
+    val id: Long,
+    val name: String = "",
+    val picUrl: String? = null,
+    val artist: Artist? = null
+)
+
+// ==================== 歌手热门歌曲 /artist/top/song?id= ====================
+@Serializable
+data class ArtistTopSongResp(
+    val code: Int = 0,
+    val songs: List<DetailSong> = emptyList()
+)
+
+// ==================== 专辑内容 /album?id= ====================
+@Serializable
+data class AlbumContentResp(
+    val code: Int = 0,
+    val album: AlbumInfo? = null,
+    val songs: List<DetailSong> = emptyList()
+)
+@Serializable
+data class AlbumInfo(
+    val id: Long = 0,
+    val name: String = "",
+    val picUrl: String? = null
+)
+
+// ==================== 已缓存歌曲信息（缓存管理用）====================
+data class CachedItem(
+    val key: String,
+    val song: Song? = null,
+    val sizeBytes: Long = 0L
+)
+
 // ==================== 个性化设置 ====================
 enum class BgSource { WALLPAPER, COVER }
 
@@ -228,5 +300,9 @@ data class AppSettings(
     // 全屏播放器背景
     val fpBgSource: BgSource = BgSource.COVER,
     val fpMaskAlpha: Float = 0.4f,
-    val fpBlurRadius: Int = 20
+    val fpBlurRadius: Int = 20,
+    // 歌曲缓存开关（默认开启）
+    val cacheEnabled: Boolean = true,
+    // 控件透明度：0 完全透明，1 不透明；与个性化联动
+    val controlAlpha: Float = 0.3f
 )
