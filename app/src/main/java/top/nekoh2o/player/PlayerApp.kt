@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import top.nekoh2o.player.data.cache.MusicCache
 import top.nekoh2o.player.data.net.ApiFactory
 import top.nekoh2o.player.data.net.CookieStore
 import top.nekoh2o.player.data.repo.LocalStore
@@ -14,7 +15,6 @@ class PlayerApp : Application() {
 
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // 全局本地存储（历史/收藏/自定义歌单）
     lateinit var localStore: LocalStore
         private set
 
@@ -22,6 +22,7 @@ class PlayerApp : Application() {
         super.onCreate()
 
         ApiFactory.init(this)
+        MusicCache.init(this)
         localStore = LocalStore(this)
 
         appScope.launch {
