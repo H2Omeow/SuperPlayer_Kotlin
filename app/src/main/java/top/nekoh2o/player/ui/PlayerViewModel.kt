@@ -223,29 +223,23 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * 当前行的填充比例 0f~1f，供悬浮窗卡拉OK渐变使用。
-     * 有逐字时间时按逐字进度累加字符占比；无逐字时按本行→下一行的时间线性插值。
+     * 有逐字时间时按逐字进度累加字符占比；无逐字时整行直接高亮（返回 1f），
+     * 不做逐字扫光，避免没有逐字歌词的歌曲被误加渐变。
      */
     private fun lineFillFraction(lineIndex: Int, posMs: Long): Float {
         val lys = _ui.value.lyrics
         val line = lys.getOrNull(lineIndex) ?: return 0f
         val sec = posMs / 1000.0
         val words = line.words
-        if (!words.isNullOrEmpty()) {
-            val totalChars = words.sumOf { it.text.length }.coerceAtLeast(1)
-            var filled = 0.0
-            for (w in words) {
-                val p = ((sec - w.start) / w.dur).coerceIn(0.0, 1.0)
-                filled += w.text.length * p
-                if (p < 1.0) break
-            }
-            return (filled / totalChars).toFloat().coerceIn(0f, 1f)
+        if (words.isNullOrEmpty()) return 1f // 无逐字时间：整行高亮，不逐字渐变
+        val totalChars = words.sumOf { it.text.length }.coerceAtLeast(1)
+        var filled = 0.0
+        for (w in words) {
+            val p = ((sec - w.start) / w.dur).coerceIn(0.0, 1.0)
+            filled += w.text.length * p
+            if (p < 1.0) break
         }
-        // 无逐字：按本行到下一行的时间线性推进
-        val next = lys.getOrNull(lineIndex + 1)
-        val start = line.time
-        val end = next?.time ?: (start + 5.0)
-        if (end <= start) return 1f
-        return ((sec - start) / (end - start)).toFloat().coerceIn(0f, 1f)
+        return (filled / totalChars).toFloat().coerceIn(0f, 1f)
     }
 
     private fun Song.toMediaItem(): MediaItem =
