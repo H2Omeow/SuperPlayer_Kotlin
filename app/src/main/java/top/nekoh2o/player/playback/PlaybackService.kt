@@ -12,6 +12,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlinx.coroutines.runBlocking
 import top.nekoh2o.player.data.cache.MusicCache
+import top.nekoh2o.player.data.repo.DownloadIndex
 import top.nekoh2o.player.data.repo.MusicRepository
 
 class PlaybackService : MediaSessionService() {
@@ -35,19 +36,25 @@ class PlaybackService : MediaSessionService() {
 
             if (raw.startsWith("neko:")) {
                 val id = raw.removePrefix("neko:").toLongOrNull()
-                val realUrl = if (id != null) {
-                    runBlocking {
-                        repo.resolvePlayUrl(id)
-                    }
-                } else {
-                    null
+
+                // 优先使用本地已下载文件，跳过网络与缓存
+                val downloaded = if (id != null) DownloadIndex.get(id) else null
+                if (downloaded != null) {
+                    return@Factory dataSpec.withUri(Uri.parse(downloaded.audioUri))
                 }
 
+                val realUrl = if (id != null) {
+                    runBlocking { repo.resolvePlayUrl(id) }
+                } else null
+
+                // 用歌曲 id 作为缓存 key，避免因每次解析出的直链不同导致
+                // 缓存按 URL 存储、缓存管理无法反查歌曲信息（显示"未知歌曲"）
                 if (realUrl != null) {
                     dataSpec.withUri(Uri.parse(realUrl))
-                } else {
-                    dataSpec
-                }
+                        .buildUpon()
+                        .setKey(id.toString())
+                        .build()
+                } else dataSpec
             } else {
                 dataSpec
             }
@@ -65,6 +72,8 @@ class PlaybackService : MediaSessionService() {
                 true
             )
             .setHandleAudioBecomingNoisy(true)
+            // 网络播放时持有 WifiLock + WakeLock，避免 CPU/WiFi 休眠导致后台断流
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
 
         mediaSession = MediaSession.Builder(this, player).build()

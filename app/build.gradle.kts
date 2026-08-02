@@ -1,8 +1,37 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
+}
+
+// ==================== 版本管理 ====================
+val versionProps = Properties().also { props ->
+    val f = file("version.properties")
+    if (f.exists()) f.inputStream().use(props::load)
+}
+val buildVersionCode = versionProps.getProperty("versionCode", "1").toInt()
+val buildVersionName = versionProps.getProperty("versionName", "1.0.0")
+
+/**
+ * 手动递增版本号（仅在新增功能时执行）：
+ *   ./gradlew incrementVersion
+ * versionCode +1，versionName patch 段 +1。
+ * 修 bug 的构建不调用此任务，版本号保持不变。
+ */
+tasks.register("incrementVersion") {
+    doFirst {
+        val newCode = buildVersionCode + 1
+        val parts = buildVersionName.split(".")
+        val newName = "${parts.getOrElse(0) { "1" }}.${parts.getOrElse(1) { "0" }}" +
+            ".${(parts.getOrNull(2)?.toIntOrNull() ?: 0) + 1}"
+        versionProps.setProperty("versionCode", newCode.toString())
+        versionProps.setProperty("versionName", newName)
+        file("version.properties").outputStream().use { versionProps.store(it, "auto-generated") }
+        println("Version bumped → $newCode ($newName)")
+    }
 }
 
 android {
@@ -13,8 +42,23 @@ android {
         applicationId = "top.nekoh2o.player"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = buildVersionCode
+        versionName = buildVersionName
+    }
+
+    // 正式签名：CI 通过环境变量注入。本地无这些变量时 release 走 debug 签名，
+    // 不影响本地 assembleDebug / assembleRelease 流程。
+    val releaseStoreFile = System.getenv("KEYSTORE_FILE")
+    val hasReleaseSigning = releaseStoreFile != null && file(releaseStoreFile).exists()
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -24,6 +68,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {
@@ -69,5 +118,6 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.reorderable)
+    // SAF DocumentFile helper（下载目录选择）
+    implementation("androidx.documentfile:documentfile:1.0.1")
 }
-

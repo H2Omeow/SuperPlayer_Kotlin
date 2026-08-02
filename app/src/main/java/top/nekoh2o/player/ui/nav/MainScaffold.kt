@@ -25,7 +25,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import top.nekoh2o.player.data.model.BgSource
 import top.nekoh2o.player.ui.PlayMode
 import top.nekoh2o.player.ui.PlayerViewModel
 import top.nekoh2o.player.ui.screens.HomeScreen
@@ -70,7 +69,8 @@ fun MainScaffold(
             )
         }
 
-        // 开了全局背景时 Scaffold 透明，让壁纸透出
+        // 开了全局背景时 Scaffold 透明，让壁纸透出。
+        // 控件本身的透明度已由 NekoTheme 统一处理，这里只管背景层。
         val transparent = state.settings.globalBgEnabled && state.wallpaperUrl != null
         Scaffold(
             containerColor = if (transparent) Color.Transparent else MaterialTheme.colorScheme.background,
@@ -78,11 +78,7 @@ fun MainScaffold(
             bottomBar = {
                 Column {
                     MiniPlayer(vm, onOpenFullPlayer)
-                    NavigationBar(
-                        containerColor = if (transparent)
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-                        else MaterialTheme.colorScheme.surfaceContainer
-                    ) {
+                    NavigationBar {
                         Tab.entries.forEach { t ->
                             NavigationBarItem(
                                 selected = tab == t,
@@ -114,11 +110,8 @@ private fun MiniPlayer(vm: PlayerViewModel, onOpenFullPlayer: () -> Unit) {
     val state by vm.ui.collectAsState()
     val cur = state.current ?: return
 
-    val transparent = state.settings.globalBgEnabled && state.wallpaperUrl != null
-    Surface(
-        color = if (transparent) MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
-        else MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
+    // surfaceContainerHigh 已由 NekoTheme 按 controlAlpha 调过透明度
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column {
             val progress = if (state.durationMs > 0)
                 state.positionMs.toFloat() / state.durationMs else 0f

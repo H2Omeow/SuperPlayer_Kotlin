@@ -2,8 +2,10 @@ package top.nekoh2o.player
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -12,6 +14,7 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,24 +30,28 @@ class MainActivity : ComponentActivity() {
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-    private val ssoLogin =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK) vm.onSsoLoggedIn()
-        }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        // 冷启动时若由深链拉起（浏览器登录完成回跳），处理携带的 token
+        handleAuthDeepLink(intent)
         setContent {
-            NekoTheme {
+            val state by vm.ui.collectAsState()
+            // 壁纸开启且已拿到图时才让控件透明，否则白字会落到纯色底上
+            val translucent = state.settings.globalBgEnabled && state.wallpaperUrl != null
+
+            NekoTheme(
+                controlAlpha = state.settings.controlAlpha,
+                translucent = translucent
+            ) {
                 var fullPlayer by remember { mutableStateOf(false) }
 
                 MainScaffold(
                     vm = vm,
                     onOpenFullPlayer = { fullPlayer = true },
-                    onStartSsoLogin = { ssoLogin.launch(Intent(this, LoginActivity::class.java)) }
+                    onStartSsoLogin = { startSsoLogin() }
                 )
 
                 AnimatedVisibility(
@@ -60,5 +67,40 @@ class MainActivity : ComponentActivity() {
                 if (fullPlayer) BackHandler { fullPlayer = false }
             }
         }
+    }
+
+    // 已在栈顶（singleTop）时，回跳深链通过 onNewIntent 送达
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuthDeepLink(intent)
+    }
+
+    // 跳转系统浏览器打开账户中心登录，登录完成后账户中心 302 回跳 nekoplayer://auth?token=<JWT>
+    private fun startSsoLogin() {
+        val redirect = Uri.encode("$AUTH_SCHEME://$AUTH_HOST")
+        val loginUrl = "$ACCOUNT_CENTER/login?redirect=$redirect"
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(loginUrl)))
+        } catch (e: Exception) {
+            Toast.makeText(this, "无法打开浏览器", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // 解析回跳深链，取出 JWT 交给 ViewModel 完成登录
+    private fun handleAuthDeepLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != AUTH_SCHEME || data.host != AUTH_HOST) return
+        val token = data.getQueryParameter("token")
+        if (!token.isNullOrEmpty()) {
+            vm.onSsoTokenReceived(token)
+            Toast.makeText(this, "登录成功", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    companion object {
+        private const val ACCOUNT_CENTER = "https://account.nekoh2o.top"
+        private const val AUTH_SCHEME = "nekoplayer"
+        private const val AUTH_HOST = "auth"
     }
 }

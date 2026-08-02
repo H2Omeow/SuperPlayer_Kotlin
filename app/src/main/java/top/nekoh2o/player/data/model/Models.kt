@@ -304,5 +304,15 @@ data class AppSettings(
     // 歌曲缓存开关（默认开启）
     val cacheEnabled: Boolean = true,
     // 控件透明度：0 完全透明，1 不透明；与个性化联动
-    val controlAlpha: Float = 0.3f
+    val controlAlpha: Float = 0.3f,
+    // 播放倍速（0.5x ~ 2.0x），跨曲保持
+    val playbackSpeed: Float = 1.0f,
+    // 悬浮窗歌词开关（需悬浮窗权限）
+    val floatingLyricEnabled: Boolean = false,
+    // 悬浮窗歌词：显示双行（当前行 + 下一行）
+    val floatingLyricDoubleRow: Boolean = false,
+    // 悬浮窗歌词：显示翻译行（若歌词含翻译）
+    val floatingLyricShowTranslation: Boolean = true,
+    // 下载目录：SAF tree URI 字符串（空串 = 默认 Music/NekoPlayer/）
+    val downloadDirUri: String = ""
 )

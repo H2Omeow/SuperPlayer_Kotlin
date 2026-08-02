@@ -70,4 +70,29 @@ interface MusicApi {
         @Query("key") key: String,
         @Query("timestamp") ts: Long
     ): QrCheckResp
+
+    // ========== 分类搜索（歌手 type=100 / 专辑 type=10）==========
+    @GET("api/search")
+    suspend fun searchArtist(
+        @Query("keywords") kw: String,
+        @Query("type") type: Int = 100,
+        @Query("limit") limit: Int = 30,
+        @Query("offset") offset: Int = 0
+    ): SearchArtistResp
+
+    @GET("api/search")
+    suspend fun searchAlbum(
+        @Query("keywords") kw: String,
+        @Query("type") type: Int = 10,
+        @Query("limit") limit: Int = 30,
+        @Query("offset") offset: Int = 0
+    ): SearchAlbumResp
+
+    // ========== 歌手热门歌曲 ==========
+    @GET("api/artist/top/song")
+    suspend fun artistTopSong(@Query("id") id: Long): ArtistTopSongResp
+
+    // ========== 专辑内容 ==========
+    @GET("api/album")
+    suspend fun albumContent(@Query("id") id: Long): AlbumContentResp
 }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import top.nekoh2o.player.data.cache.MusicCache
 import top.nekoh2o.player.data.net.ApiFactory
 import top.nekoh2o.player.data.net.CookieStore
+import top.nekoh2o.player.data.repo.DownloadIndex
 import top.nekoh2o.player.data.repo.LocalStore
 import top.nekoh2o.player.data.repo.MusicRepository
 
@@ -23,6 +24,7 @@ class PlayerApp : Application() {
 
         ApiFactory.init(this)
         MusicCache.init(this)
+        DownloadIndex.init(this)
         localStore = LocalStore(this)
 
         appScope.launch {

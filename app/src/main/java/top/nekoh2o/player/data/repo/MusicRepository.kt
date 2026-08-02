@@ -116,6 +116,37 @@ class MusicRepository {
         }.getOrNull()
     }
 
+    // ---------- 分类搜索：歌手 ----------
+    suspend fun searchArtist(keyword: String, offset: Int, limit: Int = 30): List<top.nekoh2o.player.data.model.ArtistItem> {
+        val resp = runCatching { api.searchArtist(keyword, 100, limit, offset) }.getOrNull()
+        return if (resp?.code == 200) resp.result?.artists ?: emptyList() else emptyList()
+    }
+
+    // ---------- 分类搜索：专辑 ----------
+    suspend fun searchAlbum(keyword: String, offset: Int, limit: Int = 30): List<top.nekoh2o.player.data.model.AlbumItem> {
+        val resp = runCatching { api.searchAlbum(keyword, 10, limit, offset) }.getOrNull()
+        return if (resp?.code == 200) resp.result?.albums ?: emptyList() else emptyList()
+    }
+
+    // ---------- 歌手热门歌曲 ----------
+    suspend fun artistTopSongs(artistId: Long): List<Song> {
+        val resp = runCatching { api.artistTopSong(artistId) }.getOrNull()
+        if (resp?.code != 200) return emptyList()
+        return resp.songs.map {
+            Song(it.id, it.name, it.ar.firstOrNull()?.name ?: "未知", it.al?.picUrl)
+        }
+    }
+
+    // ---------- 专辑内容 ----------
+    suspend fun albumSongs(albumId: Long): List<Song> {
+        val resp = runCatching { api.albumContent(albumId) }.getOrNull()
+        if (resp?.code != 200) return emptyList()
+        val picUrl = resp.album?.picUrl
+        return resp.songs.map {
+            Song(it.id, it.name, it.ar.firstOrNull()?.name ?: "未知", it.al?.picUrl ?: picUrl)
+        }
+    }
+
     // ---------- QR 登录 ----------
     suspend fun qrKey(): String? {
         val resp = runCatching { api.qrKey(System.currentTimeMillis()) }.getOrNull()

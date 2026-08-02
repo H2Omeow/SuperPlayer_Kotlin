@@ -10,6 +10,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 请求忽略电池优化，缓解国产 ROM 后台清理 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- 保活：持有 CPU 唤醒锁，避免锁屏后播放线程被挂起 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 悬浮窗歌词：在其它应用之上绘制 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- 下载歌曲到公共音乐目录（Android 9 及以下需要写外部存储） -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:name=".PlayerApp"
@@ -30,12 +38,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- SSO 登录回跳深链：账户中心登录完成后 302 到 nekoplayer://auth?token=... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nekoplayer" android:host="auth" />
+            </intent-filter>
         </activity>
-
-        <activity
-            android:name=".LoginActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <!-- 后台播放核心：Media3 会话服务 -->
         <service
@@ -46,6 +56,11 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- 悬浮窗歌词服务 -->
+        <service
+            android:name=".playback.FloatingLyricService"
+            android:exported="false" />
 
     </application>
 </manifest>

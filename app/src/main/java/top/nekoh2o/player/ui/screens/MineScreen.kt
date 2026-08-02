@@ -1,5 +1,6 @@
 package top.nekoh2o.player.ui.screens
 
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import top.nekoh2o.player.data.model.Song
 import top.nekoh2o.player.ui.PlayerViewModel
+import top.nekoh2o.player.ui.theme.NekoDefaults
 
 @Composable
 fun MineScreen(vm: PlayerViewModel, onStartSsoLogin: () -> Unit) {
@@ -106,15 +108,18 @@ private fun UserCard(
             }
             Column {
                 if (state.loggedIn) {
-                    TextButton(onClick = {
-                        android.webkit.CookieManager.getInstance().removeAllCookies(null)
-                        android.webkit.CookieManager.getInstance().flush()
-                        onLogout()
-                    }) { Text("退出") }
+                    TextButton(
+                        onClick = {
+                            android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                            android.webkit.CookieManager.getInstance().flush()
+                            onLogout()
+                        },
+                        colors = NekoDefaults.textButtonColors()
+                    ) { Text("退出") }
                 } else {
-                    TextButton(onClick = onLogin) { Text("登录") }
+                    TextButton(onClick = onLogin, colors = NekoDefaults.textButtonColors()) { Text("登录") }
                 }
-                TextButton(onClick = onQrLogin) { Text("网易云") }
+                TextButton(onClick = onQrLogin, colors = NekoDefaults.textButtonColors()) { Text("网易云") }
             }
         }
     }
@@ -132,6 +137,18 @@ private fun SongList(
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            TextButton(
+                onClick = { vm.playAll(songs) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                colors = NekoDefaults.textButtonColors()
+            ) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("播放全部 (${songs.size} 首)")
+            }
+            HorizontalDivider()
+        }
         items(songs, key = { it.id }) { song ->
             SongRow(
                 song = song,
@@ -192,16 +209,25 @@ private fun PlaylistList(vm: PlayerViewModel, onOpen: (Int) -> Unit) {
             text = {
                 OutlinedTextField(
                     value = newName, onValueChange = { newName = it },
-                    singleLine = true, label = { Text("歌单名称") }
+                    singleLine = true, label = { Text("歌单名称") },
+                    colors = NekoDefaults.textFieldColors()
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    if (newName.isNotBlank()) vm.createPlaylist(newName.trim())
-                    newName = ""; showCreate = false
-                }) { Text("创建") }
+                TextButton(
+                    onClick = {
+                        if (newName.isNotBlank()) vm.createPlaylist(newName.trim())
+                        newName = ""; showCreate = false
+                    },
+                    colors = NekoDefaults.textButtonColors()
+                ) { Text("创建") }
             },
-            dismissButton = { TextButton(onClick = { showCreate = false }) { Text("取消") } }
+            dismissButton = {
+                TextButton(
+                    onClick = { showCreate = false },
+                    colors = NekoDefaults.textButtonColors()
+                ) { Text("取消") }
+            }
         )
     }
 }
@@ -225,6 +251,18 @@ private fun PlaylistDetail(vm: PlayerViewModel, index: Int, onBack: () -> Unit) 
             Box(Modifier.fillMaxSize(), Alignment.Center) { Text("歌单为空") }
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
+                item {
+                    TextButton(
+                        onClick = { vm.playAll(pl.songs) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        colors = NekoDefaults.textButtonColors()
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("播放全部 (${pl.songs.size} 首)")
+                    }
+                    HorizontalDivider()
+                }
                 items(pl.songs.size) { i ->
                     val song = pl.songs[i]
                     Row(

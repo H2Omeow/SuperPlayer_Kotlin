@@ -1,0 +1,164 @@
+package top.nekoh2o.player.ui.screens
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import top.nekoh2o.player.data.model.DownloadStatus
+import top.nekoh2o.player.data.model.DownloadTask
+import top.nekoh2o.player.data.model.DownloadedSong
+import top.nekoh2o.player.ui.PlayerViewModel
+import top.nekoh2o.player.ui.theme.NekoDefaults
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
+    val state by vm.ui.collectAsState()
+    // 正在进行的任务（未完成）
+    val active = state.downloadTasks.filter { it.status != DownloadStatus.DONE }
+    val done = state.downloadedSongs
+
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text("下载管理") },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+            }
+        )
+
+        if (active.isEmpty() && done.isEmpty()) {
+            Box(Modifier.fillMaxSize(), Alignment.Center) { Text("暂无下载") }
+            return@Column
+        }
+
+        LazyColumn(Modifier.fillMaxSize()) {
+            if (active.isNotEmpty()) {
+                item {
+                    Text(
+                        "正在下载 (${active.size})",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
+                    )
+                }
+                items(active, key = { it.song.id }) { task -> ActiveTaskRow(task) }
+            }
+
+            if (done.isNotEmpty()) {
+                item {
+                    Text(
+                        "已下载 (${done.size})",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
+                    )
+                }
+                items(done, key = { it.songId }) { d ->
+                    DownloadedRow(
+                        item = d,
+                        onPlay = { vm.playNow(d.song) },
+                        onRemove = { vm.removeDownloaded(d.songId) }
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveTaskRow(task: DownloadTask) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = task.song.pc?.let { "$it?param=80y80" },
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(task.song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium)
+            when (task.status) {
+                DownloadStatus.FAILED -> Text(
+                    "下载失败：${task.errorMsg ?: "未知错误"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                else -> {
+                    Spacer(Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { task.progress },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        if (task.status == DownloadStatus.FAILED) {
+            Icon(Icons.Filled.ErrorOutline, contentDescription = "失败",
+                tint = MaterialTheme.colorScheme.error)
+        } else {
+            Text("${(task.progress * 100).toInt()}%",
+                style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@Composable
+private fun DownloadedRow(
+    item: DownloadedSong,
+    onPlay: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onPlay() }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = item.song.pc?.let { "$it?param=80y80" },
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(item.song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "${item.song.ar} · ${qualityLabel(item.quality)}",
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Filled.Delete, contentDescription = "移除")
+        }
+    }
+}
+
+private fun qualityLabel(q: String): String = when (q) {
+    "standard" -> "标准"
+    "higher" -> "较高"
+    "exhigh" -> "极高"
+    "lossless" -> "无损"
+    else -> q
+}

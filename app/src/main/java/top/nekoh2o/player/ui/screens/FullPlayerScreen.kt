@@ -51,7 +51,17 @@ import top.nekoh2o.player.data.model.LyricLine
 import top.nekoh2o.player.data.model.LyricWord
 import top.nekoh2o.player.ui.PlayMode
 import top.nekoh2o.player.ui.PlayerViewModel
+import android.provider.Settings
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.SubtitlesOff
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.ui.platform.LocalContext
+import top.nekoh2o.player.ui.theme.NekoDefaults
 
 private val TextMain = Color.White
 private val TextSub = Color.White.copy(alpha = 0.7f)
@@ -62,6 +72,11 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
     val state by vm.ui.collectAsState()
     val cur = state.current
     var showQueue by remember { mutableStateOf(false) }
+    var showSpeedDialog by remember { mutableStateOf(false) }
+    var showTimerDialog by remember { mutableStateOf(false) }
+    var showFloatingPermDialog by remember { mutableStateOf(false) }
+    var showQualityDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val activeColor = MaterialTheme.colorScheme.primary
 
     Box(Modifier.fillMaxSize()) {
@@ -130,6 +145,21 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )
 
+            ControlRow(
+                isFav = cur != null && vm.isFav(cur.id),
+                speed = state.settings.playbackSpeed,
+                sleepMinutes = state.sleepMinutes,
+                floatingEnabled = state.settings.floatingLyricEnabled,
+                onSpeedClick = { showSpeedDialog = true },
+                onTimerClick = { showTimerDialog = true },
+                onDownloadClick = { if (cur != null) showQualityDialog = true },
+                onFavClick = { cur?.let { vm.toggleFav(it) } },
+                onFloatingClick = {
+                    if (!Settings.canDrawOverlays(context)) showFloatingPermDialog = true
+                    else vm.toggleFloatingLyric(context)
+                }
+            )
+
             ProgressBar(
                 positionMs = state.positionMs,
                 durationMs = state.durationMs,
@@ -179,6 +209,222 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
     if (showQueue) {
         QueueSheet(vm, onDismiss = { showQueue = false })
     }
+    if (showFloatingPermDialog) {
+        AlertDialog(
+            onDismissRequest = { showFloatingPermDialog = false },
+            title = { Text("需要悬浮窗权限") },
+            text = { Text("悬浮窗歌词需要「显示在其他应用上层」权限，以便在锁屏或其他应用界面上实时显示当前歌词。") },
+            confirmButton = {
+                TextButton(
+                    onClick = { showFloatingPermDialog = false; vm.toggleFloatingLyric(context) },
+                    colors = NekoDefaults.textButtonColors()
+                ) { Text("去授权") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showFloatingPermDialog = false },
+                    colors = NekoDefaults.textButtonColors()
+                ) { Text("取消") }
+            }
+        )
+    }
+    if (showSpeedDialog) {
+        SpeedDialog(
+            current = state.settings.playbackSpeed,
+            onSelect = { vm.setPlaybackSpeed(it); showSpeedDialog = false },
+            onDismiss = { showSpeedDialog = false }
+        )
+    }
+    if (showTimerDialog) {
+        TimerDialog(
+            current = state.sleepMinutes,
+            onSelect = { vm.setSleepTimer(it); showTimerDialog = false },
+            onDismiss = { showTimerDialog = false }
+        )
+    }
+    if (showQualityDialog) {
+        QualityDialog(
+            current = state.quality,
+            onSelect = { q ->
+                showQualityDialog = false
+                cur?.let { vm.downloadSong(it, q) }
+            },
+            onDismiss = { showQualityDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun QualityDialog(current: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    // value → label
+    val levels = listOf(
+        "standard" to "标准 128k",
+        "higher" to "较高 192k",
+        "exhigh" to "极高 320k",
+        "lossless" to "无损 FLAC"
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("下载音质") },
+        text = {
+            Column {
+                levels.forEach { (value, label) ->
+                    TextButton(
+                        onClick = { onSelect(value) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = NekoDefaults.textButtonColors()
+                    ) {
+                        Text(
+                            label,
+                            color = if (value == current) MaterialTheme.colorScheme.primary else TextMain,
+                            fontWeight = if (value == current) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss, colors = NekoDefaults.textButtonColors()) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ControlRow(
+    isFav: Boolean,
+    speed: Float,
+    sleepMinutes: Int,
+    floatingEnabled: Boolean,
+    onSpeedClick: () -> Unit,
+    onTimerClick: () -> Unit,
+    onDownloadClick: () -> Unit,
+    onFavClick: () -> Unit,
+    onFloatingClick: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ControlItem(label = "${speed}x", active = false, onClick = onSpeedClick) {
+            Icon(Icons.Filled.Speed, contentDescription = "倍速", tint = TextMain)
+        }
+        ControlItem(
+            label = if (sleepMinutes > 0) "${sleepMinutes}min" else "定时",
+            active = sleepMinutes > 0,
+            onClick = onTimerClick
+        ) {
+            Icon(
+                Icons.Filled.Timer, contentDescription = "定时",
+                tint = if (sleepMinutes > 0) MaterialTheme.colorScheme.primary else TextMain
+            )
+        }
+        ControlItem(label = "下载", active = false, onClick = onDownloadClick) {
+            Icon(Icons.Filled.Download, contentDescription = "下载", tint = TextMain)
+        }
+        ControlItem(
+            label = if (isFav) "已收藏" else "收藏",
+            active = isFav,
+            onClick = onFavClick
+        ) {
+            Icon(
+                if (isFav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                contentDescription = "收藏",
+                tint = if (isFav) MaterialTheme.colorScheme.primary else TextMain
+            )
+        }
+        ControlItem(label = "悬浮词", active = floatingEnabled, onClick = onFloatingClick) {
+            Icon(
+                if (floatingEnabled) Icons.Filled.Subtitles else Icons.Filled.SubtitlesOff,
+                contentDescription = "悬浮歌词",
+                tint = if (floatingEnabled) MaterialTheme.colorScheme.primary else TextMain
+            )
+        }
+    }
+}
+
+@Composable
+private fun ControlItem(
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(onClick = onClick) { icon() }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (active) MaterialTheme.colorScheme.primary else TextSub
+        )
+    }
+}
+
+@Composable
+private fun SpeedDialog(current: Float, onSelect: (Float) -> Unit, onDismiss: () -> Unit) {
+    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("播放速度") },
+        text = {
+            Column {
+                speeds.forEach { s ->
+                    TextButton(
+                        onClick = { onSelect(s) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = NekoDefaults.textButtonColors()
+                    ) {
+                        Text(
+                            "${s}x",
+                            color = if (s == current) MaterialTheme.colorScheme.primary else TextMain,
+                            fontWeight = if (s == current) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss, colors = NekoDefaults.textButtonColors()) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun TimerDialog(current: Int, onSelect: (Int) -> Unit, onDismiss: () -> Unit) {
+    val options = listOf(0 to "关闭", 15 to "15 分钟", 30 to "30 分钟", 45 to "45 分钟", 60 to "60 分钟")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("定时关闭") },
+        text = {
+            Column {
+                options.forEach { (mins, label) ->
+                    TextButton(
+                        onClick = { onSelect(mins) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = NekoDefaults.textButtonColors()
+                    ) {
+                        Text(
+                            label,
+                            color = if (mins == current) MaterialTheme.colorScheme.primary else TextMain,
+                            fontWeight = if (mins == current) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss, colors = NekoDefaults.textButtonColors()) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 @Composable

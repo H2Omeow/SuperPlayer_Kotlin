@@ -1,7 +1,9 @@
+gradle.properties
+gradle/
 .gradle/
 build/
-.kotlin/
-.idea/
+kotlin/
+idea/
 *.iml
 local.properties
 *.log
@@ -9,3 +11,4 @@ nano.*.save
 *.save
 .aider.chat.history.md
 .aider.input.history
+.aider*

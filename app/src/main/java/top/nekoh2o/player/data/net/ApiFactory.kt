@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit
 object ApiFactory {
 
     const val BASE = "https://player.nekoh2o.top/"
+    const val PLAYER_HOST = "player.nekoh2o.top"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -32,6 +33,21 @@ object ApiFactory {
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
+            // SSO 鉴权：仅对 player 域名注入 Bearer token（账户中心下发的 JWT），
+            // 避免把 token 泄露给下载走的第三方 CDN 域名。
+            .addInterceptor { chain ->
+                val req = chain.request()
+                val token = CookieStore.appTokenValue()
+                if (req.url.host == PLAYER_HOST && token.isNotEmpty()) {
+                    chain.proceed(
+                        req.newBuilder()
+                            .header("Authorization", "Bearer $token")
+                            .build()
+                    )
+                } else {
+                    chain.proceed(req)
+                }
+            }
             .addInterceptor(
                 HttpLoggingInterceptor().apply {
                     level = HttpLoggingInterceptor.Level.BASIC
