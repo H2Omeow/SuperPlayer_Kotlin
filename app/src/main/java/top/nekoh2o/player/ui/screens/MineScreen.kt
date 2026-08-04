@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import top.nekoh2o.player.data.model.Song
 import top.nekoh2o.player.ui.PlayerViewModel
+import top.nekoh2o.player.ui.a11y.asButton
+import top.nekoh2o.player.ui.a11y.clickableRow
 import top.nekoh2o.player.ui.theme.NekoDefaults
 
 @Composable
@@ -194,7 +196,7 @@ private fun PlaylistList(vm: PlayerViewModel, onOpen: (Int) -> Unit) {
                                 Icon(Icons.Filled.Delete, contentDescription = "删除歌单")
                             }
                         },
-                        modifier = Modifier.clickable { onOpen(i) }
+                        modifier = Modifier.asButton(actionLabel = "打开歌单") { onOpen(i) }
                     )
                     HorizontalDivider()
                 }
@@ -266,23 +268,29 @@ private fun PlaylistDetail(vm: PlayerViewModel, index: Int, onBack: () -> Unit) 
                 items(pl.songs.size) { i ->
                     val song = pl.songs[i]
                     Row(
-                        Modifier.fillMaxWidth().clickable { vm.playNow(song) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        AsyncImage(
-                            model = song.pc?.let { "$it?param=100y100" },
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp))
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                song.ar, style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                        Row(
+                            Modifier.weight(1f).clickableRow(
+                                rowLabel = "${song.nm}，${song.ar}", actionLabel = "播放"
+                            ) { vm.playNow(song) },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = song.pc?.let { "$it?param=100y100" },
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp))
                             )
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    song.ar, style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                         IconButton(onClick = { vm.removeFromPlaylist(index, i) }) {
                             Icon(Icons.Filled.Delete, contentDescription = "移除")

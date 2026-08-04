@@ -1,6 +1,5 @@
 package top.nekoh2o.player.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,6 +21,7 @@ import top.nekoh2o.player.data.model.DownloadStatus
 import top.nekoh2o.player.data.model.DownloadTask
 import top.nekoh2o.player.data.model.DownloadedSong
 import top.nekoh2o.player.ui.PlayerViewModel
+import top.nekoh2o.player.ui.a11y.clickableRow
 import top.nekoh2o.player.ui.theme.NekoDefaults
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -129,25 +129,32 @@ private fun DownloadedRow(
     onRemove: () -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable { onPlay() }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AsyncImage(
-            model = item.song.pc?.let { "$it?param=80y80" },
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(item.song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "${item.song.ar} · ${qualityLabel(item.quality)}",
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall
+        Row(
+            Modifier.weight(1f).clickableRow(
+                rowLabel = "${item.song.nm}，${item.song.ar}，${qualityLabel(item.quality)}",
+                actionLabel = "播放"
+            ) { onPlay() },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AsyncImage(
+                model = item.song.pc?.let { "$it?param=80y80" },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
             )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "${item.song.ar} · ${qualityLabel(item.quality)}",
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
         IconButton(onClick = onRemove) {
             Icon(Icons.Filled.Delete, contentDescription = "移除")

@@ -30,6 +30,9 @@ import top.nekoh2o.player.data.model.ArtistItem
 import top.nekoh2o.player.data.model.SearchType
 import top.nekoh2o.player.data.model.Song
 import top.nekoh2o.player.ui.PlayerViewModel
+import top.nekoh2o.player.ui.a11y.clickableRow
+import top.nekoh2o.player.ui.a11y.minTouchTarget
+import top.nekoh2o.player.ui.a11y.toggleSemantics
 import top.nekoh2o.player.ui.theme.NekoDefaults
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,7 +102,8 @@ fun MusicScreen(vm: PlayerViewModel) {
                     sug,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { vm.doSearch(sug) }
+                        .clickableRow(rowLabel = sug, actionLabel = "搜索") { vm.doSearch(sug) }
+                        .minTouchTarget()
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -150,7 +154,7 @@ private fun ArtistResultList(
                         modifier = Modifier.size(48.dp).clip(RoundedCornerShape(24.dp))
                     )
                 },
-                modifier = Modifier.clickable { onOpen(artist) }
+                modifier = Modifier.clickableRow(rowLabel = artist.name, actionLabel = "查看歌手") { onOpen(artist) }
             )
             HorizontalDivider()
         }
@@ -186,7 +190,10 @@ private fun AlbumResultList(
                         modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp))
                     )
                 },
-                modifier = Modifier.clickable { onOpen(album) }
+                modifier = Modifier.clickableRow(
+                    rowLabel = album.artist?.let { "${album.name}，${it.name}" } ?: album.name,
+                    actionLabel = "查看专辑"
+                ) { onOpen(album) }
             )
             HorizontalDivider()
         }
@@ -397,7 +404,10 @@ private fun RecommendContent(vm: PlayerViewModel, onAddToPlaylist: (Song) -> Uni
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(state.recPlaylists, key = { it.id }) { pl ->
-                        Column(Modifier.width(120.dp).clickable { vm.openPlaylist(pl.id) }) {
+                        Column(
+                            Modifier.width(120.dp)
+                                .clickableRow(rowLabel = pl.name, actionLabel = "打开歌单") { vm.openPlaylist(pl.id) }
+                        ) {
                             AsyncImage(
                                 model = pl.picUrl?.let { "$it?param=200y200" },
                                 contentDescription = null,
@@ -472,28 +482,37 @@ fun SongRow(
     onAddToPlaylist: (() -> Unit)? = null
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable { onPlay() }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AsyncImage(
-            model = song.pc?.let { "$it?param=100y100" },
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp))
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                song.ar, style = MaterialTheme.typography.bodySmall,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
+        // 封面 + 标题合并为单个「播放」按钮节点，TalkBack 朗读为一条
+        Row(
+            Modifier.weight(1f)
+                .clickableRow(rowLabel = "${song.nm}，${song.ar}", actionLabel = "播放", onClick = onPlay),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AsyncImage(
+                model = song.pc?.let { "$it?param=100y100" },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp))
             )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    song.ar, style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+            }
         }
-        IconButton(onClick = onFav) {
+        IconButton(
+            onClick = onFav,
+            modifier = Modifier.toggleSemantics("收藏", if (isFav) "已收藏" else "未收藏")
+        ) {
             Icon(
                 if (isFav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                contentDescription = "收藏",
+                contentDescription = null,
                 tint = if (isFav) MaterialTheme.colorScheme.primary else LocalContentColor.current
             )
         }

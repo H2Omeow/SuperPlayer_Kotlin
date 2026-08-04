@@ -35,6 +35,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +66,8 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SubtitlesOff
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.ui.platform.LocalContext
+import top.nekoh2o.player.ui.a11y.clickableRow
+import top.nekoh2o.player.ui.a11y.toggleSemantics
 import top.nekoh2o.player.ui.theme.NekoDefaults
 
 private val TextMain = Color.White
@@ -173,14 +180,22 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { vm.cyclePlayMode() }) {
+                val modeLabel = when (state.playMode) {
+                    PlayMode.LOOP -> "列表循环"
+                    PlayMode.SINGLE -> "单曲循环"
+                    PlayMode.RANDOM -> "随机播放"
+                }
+                IconButton(
+                    onClick = { vm.cyclePlayMode() },
+                    modifier = Modifier.toggleSemantics("播放模式", modeLabel)
+                ) {
                     Icon(
                         when (state.playMode) {
                             PlayMode.LOOP -> Icons.Filled.Repeat
                             PlayMode.SINGLE -> Icons.Filled.RepeatOne
                             PlayMode.RANDOM -> Icons.Filled.Shuffle
                         },
-                        contentDescription = "播放模式", tint = TextMain
+                        contentDescription = null, tint = TextMain
                     )
                 }
                 IconButton(onClick = { vm.prev() }) {
@@ -190,7 +205,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                 FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(64.dp)) {
                     Icon(
                         if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = "播放/暂停",
+                        contentDescription = if (state.isPlaying) "暂停" else "播放",
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -309,37 +324,52 @@ private fun ControlRow(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ControlItem(label = "${speed}x", active = false, onClick = onSpeedClick) {
-            Icon(Icons.Filled.Speed, contentDescription = "倍速", tint = TextMain)
+        ControlItem(
+            label = "${speed}x", active = false,
+            description = "倍速", onClick = onSpeedClick
+        ) {
+            Icon(Icons.Filled.Speed, contentDescription = null, tint = TextMain)
         }
         ControlItem(
             label = if (sleepMinutes > 0) "${sleepMinutes}min" else "定时",
             active = sleepMinutes > 0,
+            description = "定时关闭",
+            stateDescription = if (sleepMinutes > 0) "已设定 ${sleepMinutes} 分钟" else "未开启",
             onClick = onTimerClick
         ) {
             Icon(
-                Icons.Filled.Timer, contentDescription = "定时",
+                Icons.Filled.Timer, contentDescription = null,
                 tint = if (sleepMinutes > 0) MaterialTheme.colorScheme.primary else TextMain
             )
         }
-        ControlItem(label = "下载", active = false, onClick = onDownloadClick) {
-            Icon(Icons.Filled.Download, contentDescription = "下载", tint = TextMain)
+        ControlItem(
+            label = "下载", active = false,
+            description = "下载当前歌曲", onClick = onDownloadClick
+        ) {
+            Icon(Icons.Filled.Download, contentDescription = null, tint = TextMain)
         }
         ControlItem(
             label = if (isFav) "已收藏" else "收藏",
             active = isFav,
+            description = "收藏",
+            stateDescription = if (isFav) "已收藏" else "未收藏",
             onClick = onFavClick
         ) {
             Icon(
                 if (isFav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                contentDescription = "收藏",
+                contentDescription = null,
                 tint = if (isFav) MaterialTheme.colorScheme.primary else TextMain
             )
         }
-        ControlItem(label = "悬浮词", active = floatingEnabled, onClick = onFloatingClick) {
+        ControlItem(
+            label = "悬浮词", active = floatingEnabled,
+            description = "悬浮歌词",
+            stateDescription = if (floatingEnabled) "已开启" else "已关闭",
+            onClick = onFloatingClick
+        ) {
             Icon(
                 if (floatingEnabled) Icons.Filled.Subtitles else Icons.Filled.SubtitlesOff,
-                contentDescription = "悬浮歌词",
+                contentDescription = null,
                 tint = if (floatingEnabled) MaterialTheme.colorScheme.primary else TextMain
             )
         }
@@ -350,10 +380,20 @@ private fun ControlRow(
 private fun ControlItem(
     label: String,
     active: Boolean,
+    description: String,
     onClick: () -> Unit,
+    stateDescription: String? = null,
     icon: @Composable () -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    // 合并图标+文字为单个按钮语义节点，TalkBack 朗读「名称，状态，按钮」而非拆成两段
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = description
+            role = Role.Button
+            stateDescription?.let { this.stateDescription = it }
+        }
+    ) {
         IconButton(onClick = onClick) { icon() }
         Text(
             label,
@@ -496,7 +536,15 @@ private fun LyricRow(
     isPlaying: Boolean,
     activeColor: Color
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    // 逐字歌词用 Canvas 绘制，对 TalkBack 不可见；这里把整行歌词（含翻译）合并为
+    // 一个语义节点朗读，当前行标注「当前播放」状态，让屏幕阅读器能读出歌词。
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = line.translation?.let { "${line.text}，${it}" } ?: line.text
+            if (isActive) stateDescription = "当前播放"
+        }
+    ) {
         if (isActive && line.words != null) {
             KaraokeLine(line.words, positionSec, isPlaying, activeColor, LyricIdle)
         } else {
@@ -647,7 +695,6 @@ private fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
                         Surface(tonalElevation = if (isDragging) 4.dp else 0.dp) {
                             Row(
                                 Modifier.fillMaxWidth()
-                                    .clickable { vm.playAt(index); onDismiss() }
                                     .padding(horizontal = 16.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -657,7 +704,13 @@ private fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
                                     modifier = Modifier.draggableHandle()
                                 )
                                 Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
+                                Column(
+                                    Modifier.weight(1f).clickableRow(
+                                        rowLabel = "${song.nm}，${song.ar}" +
+                                            if (index == state.currentIndex) "，正在播放" else "",
+                                        actionLabel = "播放"
+                                    ) { vm.playAt(index); onDismiss() }
+                                ) {
                                     Text(
                                         song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         color = if (index == state.currentIndex)

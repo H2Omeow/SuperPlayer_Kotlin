@@ -1,7 +1,6 @@
 package top.nekoh2o.player.ui.nav
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -27,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import top.nekoh2o.player.ui.PlayMode
 import top.nekoh2o.player.ui.PlayerViewModel
+import top.nekoh2o.player.ui.a11y.clickableRow
+import top.nekoh2o.player.ui.a11y.toggleSemantics
 import top.nekoh2o.player.ui.screens.HomeScreen
 import top.nekoh2o.player.ui.screens.MineScreen
 import top.nekoh2o.player.ui.screens.MusicScreen
@@ -120,32 +121,47 @@ private fun MiniPlayer(vm: PlayerViewModel, onOpenFullPlayer: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().height(2.dp)
             )
             Row(
-                Modifier.fillMaxWidth()
-                    .clickable { onOpenFullPlayer() }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AsyncImage(
-                    model = cur.pc?.let { "$it?param=100y100" },
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(44.dp)
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(cur.nm, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyMedium)
-                    Text(cur.ar, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall)
+                // 封面+标题合并为「打开播放器」按钮，控制按钮各自独立可聚焦
+                Row(
+                    Modifier.weight(1f)
+                        .clickableRow(rowLabel = "${cur.nm}，${cur.ar}", actionLabel = "打开播放器") {
+                            onOpenFullPlayer()
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = cur.pc?.let { "$it?param=100y100" },
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(44.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(cur.nm, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodyMedium)
+                        Text(cur.ar, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                 }
-                IconButton(onClick = { vm.cyclePlayMode() }) {
+                val modeLabel = when (state.playMode) {
+                    PlayMode.LOOP -> "列表循环"
+                    PlayMode.SINGLE -> "单曲循环"
+                    PlayMode.RANDOM -> "随机播放"
+                }
+                IconButton(
+                    onClick = { vm.cyclePlayMode() },
+                    modifier = Modifier.toggleSemantics("播放模式", modeLabel)
+                ) {
                     Icon(
                         when (state.playMode) {
                             PlayMode.LOOP -> Icons.Filled.Repeat
                             PlayMode.SINGLE -> Icons.Filled.RepeatOne
                             PlayMode.RANDOM -> Icons.Filled.Shuffle
                         },
-                        contentDescription = "播放模式"
+                        contentDescription = null
                     )
                 }
                 IconButton(onClick = { vm.prev() }) {
@@ -154,7 +170,7 @@ private fun MiniPlayer(vm: PlayerViewModel, onOpenFullPlayer: () -> Unit) {
                 IconButton(onClick = { vm.togglePlay() }) {
                     Icon(
                         if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = "播放/暂停"
+                        contentDescription = if (state.isPlaying) "暂停" else "播放"
                     )
                 }
                 IconButton(onClick = { vm.next() }) {

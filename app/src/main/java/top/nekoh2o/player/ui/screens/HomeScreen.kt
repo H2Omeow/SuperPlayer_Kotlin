@@ -1,6 +1,5 @@
 package top.nekoh2o.player.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headphones
@@ -13,6 +12,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import top.nekoh2o.player.ui.PlayerViewModel
+import top.nekoh2o.player.ui.a11y.asButton
 
 @Composable
 fun HomeScreen(vm: PlayerViewModel, onOpenFullPlayer: () -> Unit) {
@@ -26,7 +26,9 @@ fun HomeScreen(vm: PlayerViewModel, onOpenFullPlayer: () -> Unit) {
 
         // 当前播放状态卡片（对应 web top-status）
         ElevatedCard(
-            Modifier.fillMaxWidth().clickable { if (state.current != null) onOpenFullPlayer() }
+            Modifier.fillMaxWidth().asButton(actionLabel = "打开播放器") {
+                if (state.current != null) onOpenFullPlayer()
+            }
         ) {
             Row(
                 Modifier.padding(14.dp),
