@@ -14,11 +14,14 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import top.nekoh2o.player.ui.PlayerViewModel
 import top.nekoh2o.player.ui.nav.MainScaffold
 import top.nekoh2o.player.ui.theme.NekoTheme
@@ -48,11 +51,19 @@ class MainActivity : ComponentActivity() {
             ) {
                 var fullPlayer by remember { mutableStateOf(false) }
 
-                MainScaffold(
-                    vm = vm,
-                    onOpenFullPlayer = { fullPlayer = true },
-                    onStartSsoLogin = { startSsoLogin() }
-                )
+                // 全屏播放器打开时，把主界面整棵子树从无障碍树中移除，
+                // 否则 TalkBack 仍会朗读被遮住的主界面内容，需多次切换才能到达全屏播放器。
+                Box(
+                    Modifier.then(
+                        if (fullPlayer) Modifier.clearAndSetSemantics { } else Modifier
+                    )
+                ) {
+                    MainScaffold(
+                        vm = vm,
+                        onOpenFullPlayer = { fullPlayer = true },
+                        onStartSsoLogin = { startSsoLogin() }
+                    )
+                }
 
                 AnimatedVisibility(
                     visible = fullPlayer,

@@ -536,15 +536,7 @@ private fun LyricRow(
     isPlaying: Boolean,
     activeColor: Color
 ) {
-    // 逐字歌词用 Canvas 绘制，对 TalkBack 不可见；这里把整行歌词（含翻译）合并为
-    // 一个语义节点朗读，当前行标注「当前播放」状态，让屏幕阅读器能读出歌词。
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.semantics(mergeDescendants = true) {
-            contentDescription = line.translation?.let { "${line.text}，${it}" } ?: line.text
-            if (isActive) stateDescription = "当前播放"
-        }
-    ) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         if (isActive && line.words != null) {
             KaraokeLine(line.words, positionSec, isPlaying, activeColor, LyricIdle)
         } else {
