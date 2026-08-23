@@ -413,7 +413,7 @@ private fun StorageSettings(
 @Composable
 private fun AccountSettings(vm: PlayerViewModel, onOpenCookieManager: () -> Unit) {
     Text(
-        "账户登录与网易云 Cookie 用于云端同步和获取完整音质。登录入口位于"我的"页面。",
+        "账户登录与网易云 Cookie 用于云端同步和获取完整音质。登录入口位于「我的」页面。",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -630,8 +630,7 @@ fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { vm.saveNcCookie(cookieText) },
-                    modifier = Modifier.weight(1f),
-                    colors = NekoDefaults.buttonColors()
+                    modifier = Modifier.weight(1f)
                 ) { Text("保存") }
                 OutlinedButton(
                     onClick = {
