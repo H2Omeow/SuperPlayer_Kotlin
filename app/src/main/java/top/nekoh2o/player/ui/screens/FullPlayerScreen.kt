@@ -120,6 +120,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
 
             Spacer(Modifier.height(12.dp))
 
+            // 唱片/歌词切换区域
             Box(
                 Modifier
                     .weight(1f)
@@ -131,6 +132,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 if (showLyrics) {
+                    // 歌词模式：只显示歌词
                     LyricView(
                         lyrics = state.lyrics,
                         activeIndex = state.lyricIndex,
@@ -140,38 +142,36 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    RotatingCover(
-                        url = cur?.pc?.let { "$it?param=500y500" },
-                        playing = state.isPlaying,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    // 唱片模式：显示唱片和歌曲信息
+                    Column(
+                        Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        RotatingCover(
+                            url = cur?.pc?.let { "$it?param=500y500" },
+                            playing = state.isPlaying,
+                            modifier = Modifier
+                        )
+                        Spacer(Modifier.height(32.dp))
+                        Text(
+                            cur?.nm ?: "未播放",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold, color = TextMain,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(0.8f)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            cur?.ar ?: "-",
+                            style = MaterialTheme.typography.bodyMedium, color = TextSub,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
-
-            Text(
-                cur?.nm ?: "未播放",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold, color = TextMain,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-            Text(
-                cur?.ar ?: "-",
-                style = MaterialTheme.typography.bodyMedium, color = TextSub,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            LyricView(
-                lyrics = state.lyrics,
-                activeIndex = state.lyricIndex,
-                positionSec = state.positionMs / 1000.0,
-                isPlaying = state.isPlaying,
-                activeColor = activeColor,
-                modifier = Modifier.weight(1f).fillMaxWidth()
-            )
 
             ControlRow(
                 isFav = cur != null && vm.isFav(cur.id),

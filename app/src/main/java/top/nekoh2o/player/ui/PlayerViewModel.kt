@@ -739,7 +739,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * 请求忽略电池优化，已豁免时提示用户。
      * 调用方在此之前应已向用户说明为何需要该权限。
      */
-    fun requestBatteryExemption(context: Context) {
+    fun requestIgnoreBatteryOptimizations(context: Context) {
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
             val intent = Intent(
