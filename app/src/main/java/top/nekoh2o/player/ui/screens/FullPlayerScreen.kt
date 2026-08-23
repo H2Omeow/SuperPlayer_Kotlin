@@ -83,6 +83,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
     var showTimerDialog by remember { mutableStateOf(false) }
     var showFloatingPermDialog by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activeColor = MaterialTheme.colorScheme.primary
 
@@ -119,13 +120,33 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
 
             Spacer(Modifier.height(12.dp))
 
-            RotatingCover(
-                url = cur?.pc?.let { "$it?param=500y500" },
-                playing = state.isPlaying,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
-            Spacer(Modifier.height(20.dp))
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clickable(
+                        onClickLabel = if (showLyrics) "显示唱片" else "显示歌词",
+                        role = Role.Button
+                    ) { showLyrics = !showLyrics },
+                contentAlignment = Alignment.Center
+            ) {
+                if (showLyrics) {
+                    LyricView(
+                        lyrics = state.lyrics,
+                        activeIndex = state.lyricIndex,
+                        positionSec = state.positionMs / 1000.0,
+                        isPlaying = state.isPlaying,
+                        activeColor = activeColor,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    RotatingCover(
+                        url = cur?.pc?.let { "$it?param=500y500" },
+                        playing = state.isPlaying,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+            }
 
             Text(
                 cur?.nm ?: "未播放",

@@ -57,18 +57,6 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
         return
     }
 
-    // SAF 目录选择器：选中后持久化读写权限并保存 tree URI
-    val dirPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) }
-            vm.setDownloadDir(uri.toString())
-        }
-    }
-
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text("设置") },
@@ -87,8 +75,10 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // ========== App 全局背景 ==========
-            Text("App 全局背景", style = MaterialTheme.typography.titleMedium)
+            // ========== 个性化设置 ==========
+            Text("个性化设置", style = MaterialTheme.typography.titleMedium)
+            Text("背景、模糊和控件透明度", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Row(
                 Modifier.fillMaxWidth(),
@@ -165,8 +155,10 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
             HorizontalDivider()
 
-            // ========== 音质 ==========
-            Text("音质", style = MaterialTheme.typography.titleMedium)
+            // ========== 播放与歌词 ==========
+            Text("播放与歌词", style = MaterialTheme.typography.titleMedium)
+            Text("音质和悬浮歌词显示", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             val levels = listOf(
                 "standard" to "标准", "higher" to "较高",
                 "exhigh" to "极高", "lossless" to "无损"
@@ -181,41 +173,6 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                     RadioButton(selected = state.quality == value, onClick = { vm.setQuality(value) })
                     Text(label)
                 }
-            }
-
-            HorizontalDivider()
-
-            // ========== 后台保活 ==========
-            Text("后台保活", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "以下措施有助于防止系统在后台将应用终止，从而保证音乐连续播放。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            // 电池优化豁免
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("电池优化豁免", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "允许应用忽略系统电池优化策略，防止系统在后台强制暂停播放。" +
-                    "点击后将跳转系统设置，请手动选择「不优化」。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedButton(
-                    onClick = { vm.requestBatteryExemption(context) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = NekoDefaults.outlinedButtonColors()
-                ) { Text("申请电池优化豁免") }
-            }
-            // 厂商自启动白名单提示
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("厂商自启动白名单（手动）", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    "小米 / 华为 / OPPO / vivo 等厂商 ROM 有独立的后台限制，需在系统「自启动管理」" +
-                    "或「省电策略」中手动将本应用设置为允许自启动或无限制。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             HorizontalDivider()
@@ -256,17 +213,21 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
             HorizontalDivider()
 
-            // ========== 下载 ==========
-            Text("下载", style = MaterialTheme.typography.titleMedium)
+            // ========== 下载与存储 ==========
+            Text("下载与存储", style = MaterialTheme.typography.titleMedium)
+            Text("下载目录、已下载歌曲和缓存", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             val dirPicker = rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocumentTree()
             ) { uri: Uri? ->
                 if (uri != null) {
                     // 持久化读写权限，避免重启后失效
-                    context.contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                    )
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        )
+                    }
                     vm.setDownloadDir(uri.toString())
                 }
             }
@@ -323,8 +284,13 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
             HorizontalDivider()
 
-            // ========== 网易云 Cookie ==========
-            Text("网易云 Cookie", style = MaterialTheme.typography.titleMedium)
+            // ========== 账户信息 ==========
+            Text("账户信息", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "账户登录与网易云 Cookie 用于云端同步和获取完整音质。登录入口位于“我的”页面。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Text(
                 "填写网易云 Cookie 可获取更高音质和完整歌曲",
                 style = MaterialTheme.typography.bodySmall,
@@ -335,6 +301,41 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 colors = NekoDefaults.outlinedButtonColors()
             ) { Text("管理网易云 Cookie") }
+
+            HorizontalDivider()
+
+            // ========== 后台与高级选项 ==========
+            Text("后台与高级选项", style = MaterialTheme.typography.titleMedium)
+            Text("保持后台播放稳定所需的系统权限", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "以下措施有助于防止系统在后台将应用终止，从而保证音乐连续播放。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("电池优化豁免", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "允许应用忽略系统电池优化策略，防止系统在后台强制暂停播放。" +
+                        "点击后将跳转系统设置，请手动选择「不优化」。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = { vm.requestBatteryExemption(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = NekoDefaults.outlinedButtonColors()
+                ) { Text("申请电池优化豁免") }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("厂商自启动白名单（手动）", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "小米 / 华为 / OPPO / vivo 等厂商 ROM 有独立的后台限制，需在系统「自启动管理」" +
+                        "或「省电策略」中手动将本应用设置为允许自启动或无限制。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

@@ -145,7 +145,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             if (savedSpeed != 1.0f) controller?.setPlaybackSpeed(savedSpeed)
         }, MoreExecutors.directExecutor())
 
-        refreshLogin()
+        viewModelScope.launch {
+            CookieStore.awaitReady()
+            _ui.value = _ui.value.copy(quality = CookieStore.level)
+            refreshLoginInternal()
+        }
         refreshWallpaper()
 
         // 订阅下载任务实时进度 + 载入已下载列表
@@ -751,10 +755,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ==================== 登录与同步 ====================
     fun refreshLogin() {
         viewModelScope.launch {
-            val u = userRepo.fetchMe()
-            _ui.value = _ui.value.copy(user = u, loggedIn = u != null)
-            if (u != null) pullFromCloud()
+            CookieStore.awaitReady()
+            refreshLoginInternal()
         }
+    }
+
+    private suspend fun refreshLoginInternal() {
+        val u = userRepo.fetchMe()
+        _ui.value = _ui.value.copy(user = u, loggedIn = u != null)
+        if (u != null) pullFromCloud()
     }
 
     fun onSsoLoggedIn() = refreshLogin()
@@ -762,8 +771,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // 浏览器登录完成后，账户中心通过深链回跳并携带 JWT：存下 token 再拉取用户信息
     fun onSsoTokenReceived(token: String) {
         viewModelScope.launch {
+            CookieStore.awaitReady()
             CookieStore.setAppToken(token)
-            refreshLogin()
+            refreshLoginInternal()
         }
     }
 
