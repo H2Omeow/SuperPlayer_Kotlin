@@ -83,6 +83,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
     var showTimerDialog by remember { mutableStateOf(false) }
     var showFloatingPermDialog by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activeColor = MaterialTheme.colorScheme.primary
 
@@ -119,38 +120,58 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
 
             Spacer(Modifier.height(12.dp))
 
-            RotatingCover(
-                url = cur?.pc?.let { "$it?param=500y500" },
-                playing = state.isPlaying,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
-            Spacer(Modifier.height(20.dp))
-
-            Text(
-                cur?.nm ?: "未播放",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold, color = TextMain,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-            Text(
-                cur?.ar ?: "-",
-                style = MaterialTheme.typography.bodyMedium, color = TextSub,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            LyricView(
-                lyrics = state.lyrics,
-                activeIndex = state.lyricIndex,
-                positionSec = state.positionMs / 1000.0,
-                isPlaying = state.isPlaying,
-                activeColor = activeColor,
-                modifier = Modifier.weight(1f).fillMaxWidth()
-            )
+            // 唱片/歌词切换区域
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clickable(
+                        onClickLabel = if (showLyrics) "显示唱片" else "显示歌词",
+                        role = Role.Button
+                    ) { showLyrics = !showLyrics },
+                contentAlignment = Alignment.Center
+            ) {
+                if (showLyrics) {
+                    // 歌词模式：只显示歌词
+                    LyricView(
+                        lyrics = state.lyrics,
+                        activeIndex = state.lyricIndex,
+                        positionSec = state.positionMs / 1000.0,
+                        isPlaying = state.isPlaying,
+                        activeColor = activeColor,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // 唱片模式：显示唱片和歌曲信息
+                    Column(
+                        Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        RotatingCover(
+                            url = cur?.pc?.let { "$it?param=500y500" },
+                            playing = state.isPlaying,
+                            modifier = Modifier
+                        )
+                        Spacer(Modifier.height(32.dp))
+                        Text(
+                            cur?.nm ?: "未播放",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold, color = TextMain,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(0.8f)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            cur?.ar ?: "-",
+                            style = MaterialTheme.typography.bodyMedium, color = TextSub,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
 
             ControlRow(
                 isFav = cur != null && vm.isFav(cur.id),

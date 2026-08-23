@@ -4,7 +4,10 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private val Context.dataStore by preferencesDataStore("player_prefs")
 
@@ -24,20 +27,30 @@ object CookieStore {
     private val KEY_APP_TOKEN = stringPreferencesKey("app_token")
 
     private lateinit var appContext: Context
-
     @Volatile private var userCookie: String = ""
     @Volatile private var guestCookie: String = ""
     @Volatile private var appToken: String = ""
     @Volatile var level: String = "exhigh"
         private set
+    private val ready = CompletableDeferred<Unit>()
+    private val initMutex = Mutex()
 
     suspend fun init(context: Context) {
-        appContext = context.applicationContext
-        val prefs = appContext.dataStore.data.first()
-        userCookie = prefs[KEY_USER] ?: ""
-        guestCookie = prefs[KEY_GUEST] ?: ""
-        appToken = prefs[KEY_APP_TOKEN] ?: ""
-        level = prefs[KEY_LEVEL] ?: "exhigh"
+        initMutex.withLock {
+            if (ready.isCompleted) return
+
+            appContext = context.applicationContext
+            val prefs = appContext.dataStore.data.first()
+            userCookie = prefs[KEY_USER] ?: ""
+            guestCookie = prefs[KEY_GUEST] ?: ""
+            appToken = prefs[KEY_APP_TOKEN] ?: ""
+            level = prefs[KEY_LEVEL] ?: "exhigh"
+            ready.complete(Unit)
+        }
+    }
+
+    suspend fun awaitReady() {
+        ready.await()
     }
 
     // 播放线程同步读取：用户 cookie 优先，否则游客 cookie

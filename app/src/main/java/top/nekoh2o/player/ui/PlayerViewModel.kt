@@ -145,7 +145,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             if (savedSpeed != 1.0f) controller?.setPlaybackSpeed(savedSpeed)
         }, MoreExecutors.directExecutor())
 
-        refreshLogin()
+        viewModelScope.launch {
+            // 主动初始化 CookieStore，确保凭据加载完成
+            CookieStore.init(app)
+            _ui.value = _ui.value.copy(quality = CookieStore.level)
+            refreshLoginInternal()
+        }
         refreshWallpaper()
 
         // 订阅下载任务实时进度 + 载入已下载列表
@@ -735,7 +740,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * 请求忽略电池优化，已豁免时提示用户。
      * 调用方在此之前应已向用户说明为何需要该权限。
      */
-    fun requestBatteryExemption(context: Context) {
+    fun requestIgnoreBatteryOptimizations(context: Context) {
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
             val intent = Intent(
@@ -751,10 +756,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ==================== 登录与同步 ====================
     fun refreshLogin() {
         viewModelScope.launch {
-            val u = userRepo.fetchMe()
-            _ui.value = _ui.value.copy(user = u, loggedIn = u != null)
-            if (u != null) pullFromCloud()
+            CookieStore.awaitReady()
+            refreshLoginInternal()
         }
+    }
+
+    private suspend fun refreshLoginInternal() {
+        val u = userRepo.fetchMe()
+        _ui.value = _ui.value.copy(user = u, loggedIn = u != null)
+        if (u != null) pullFromCloud()
     }
 
     fun onSsoLoggedIn() = refreshLogin()
@@ -762,8 +772,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // 浏览器登录完成后，账户中心通过深链回跳并携带 JWT：存下 token 再拉取用户信息
     fun onSsoTokenReceived(token: String) {
         viewModelScope.launch {
+            CookieStore.awaitReady()
             CookieStore.setAppToken(token)
-            refreshLogin()
+            refreshLoginInternal()
         }
     }
 
