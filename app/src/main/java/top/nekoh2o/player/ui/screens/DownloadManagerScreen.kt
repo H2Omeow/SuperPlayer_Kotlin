@@ -166,6 +166,11 @@ private fun qualityLabel(q: String): String = when (q) {
     "standard" -> "标准"
     "higher" -> "较高"
     "exhigh" -> "极高"
-    "lossless" -> "无损"
+    "lossless" -> "无损 SQ"
+    "hires" -> "Hi-Res 无损"
+    "jyeffect" -> "高清臻音"
+    "sky" -> "沉浸环绕声"
+    "jymaster" -> "超清母带"
+    "dolby" -> "臻音全景声"
     else -> q
 }
