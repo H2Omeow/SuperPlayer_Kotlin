@@ -15,7 +15,9 @@ class NeteaseRepository {
      */
     suspend fun checkNcCookieValid(): Boolean =
         runCatching {
-            val resp = api.loginStatus()
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching false
+            val resp = api.loginStatus(cookie)
             resp.data.code == 200 && resp.data.account != null
         }.getOrDefault(false)
 
@@ -24,7 +26,9 @@ class NeteaseRepository {
      */
     suspend fun fetchNcAccount(): NcAccountResp? =
         runCatching {
-            val resp = api.userAccount()
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching null
+            val resp = api.userAccount(cookie)
             if (resp.code == 200) resp else null
         }.onFailure { e ->
             android.util.Log.e("NeteaseRepository", "fetchNcAccount() failed: ${e.message}", e)
@@ -35,7 +39,9 @@ class NeteaseRepository {
      */
     suspend fun fetchNcPlaylists(uid: Long): List<NcPlaylistItem> =
         runCatching {
-            val resp = api.userPlaylist(uid)
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching emptyList()
+            val resp = api.userPlaylist(uid, cookie)
             if (resp.code == 200) resp.playlist else emptyList()
         }.onFailure { e ->
             android.util.Log.e("NeteaseRepository", "fetchNcPlaylists() failed: ${e.message}", e)
@@ -46,7 +52,9 @@ class NeteaseRepository {
      */
     suspend fun fetchLikeList(uid: Long): List<Long> =
         runCatching {
-            val resp = api.likeList(uid)
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching emptyList()
+            val resp = api.likeList(uid, cookie)
             if (resp.code == 200) resp.ids else emptyList()
         }.onFailure { e ->
             android.util.Log.e("NeteaseRepository", "fetchLikeList() failed: ${e.message}", e)
@@ -57,7 +65,9 @@ class NeteaseRepository {
      */
     suspend fun fetchPlayRecord(uid: Long): List<NcRecordItem> =
         runCatching {
-            val resp = api.userRecord(uid, type = 1)
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching emptyList()
+            val resp = api.userRecord(uid, cookie, type = 1)
             if (resp.code == 200) resp.weekData else emptyList()
         }.onFailure { e ->
             android.util.Log.e("NeteaseRepository", "fetchPlayRecord() failed: ${e.message}", e)

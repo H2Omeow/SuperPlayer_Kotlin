@@ -13,27 +13,27 @@ interface NeteaseApi {
      * 获取网易云账号信息
      */
     @GET("nc/user/account")
-    suspend fun userAccount(): NcAccountResp
+    suspend fun userAccount(@Query("cookie") cookie: String): NcAccountResp
 
     /**
      * 检查网易云登录状态
      */
     @GET("nc/login/status")
-    suspend fun loginStatus(): NcLoginStatusResp
+    suspend fun loginStatus(@Query("cookie") cookie: String): NcLoginStatusResp
 
     /**
      * 获取用户歌单
      * @param uid 用户 ID
      */
     @GET("nc/user/playlist")
-    suspend fun userPlaylist(@Query("uid") uid: Long): NcPlaylistResp
+    suspend fun userPlaylist(@Query("uid") uid: Long, @Query("cookie") cookie: String): NcPlaylistResp
 
     /**
      * 获取用户红心歌曲 ID 列表
      * @param uid 用户 ID
      */
     @GET("nc/likelist")
-    suspend fun likeList(@Query("uid") uid: Long): NcLikeListResp
+    suspend fun likeList(@Query("uid") uid: Long, @Query("cookie") cookie: String): NcLikeListResp
 
     /**
      * 获取用户播放记录
@@ -41,7 +41,7 @@ interface NeteaseApi {
      * @param type 1: 最近一周, 0: 所有时间
      */
     @GET("nc/user/record")
-    suspend fun userRecord(@Query("uid") uid: Long, @Query("type") type: Int = 1): NcPlayRecordResp
+    suspend fun userRecord(@Query("uid") uid: Long, @Query("cookie") cookie: String, @Query("type") type: Int = 1): NcPlayRecordResp
 
     /**
      * 根据 ID 批量获取歌曲详情

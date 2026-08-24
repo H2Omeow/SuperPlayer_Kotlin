@@ -69,7 +69,9 @@ class UserRepository {
      */
     suspend fun checkNcLoginStatus(): Boolean =
         runCatching {
-            val resp = ncApi.loginStatus()
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching false
+            val resp = ncApi.loginStatus(cookie)
             resp.data?.code == 200
         }.getOrDefault(false)
 
@@ -78,7 +80,9 @@ class UserRepository {
      */
     suspend fun fetchNcAccount(): NcAccountResp? =
         runCatching {
-            ncApi.userAccount()
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching null
+            ncApi.userAccount(cookie)
         }.getOrNull()
 
     /**
@@ -86,7 +90,9 @@ class UserRepository {
      */
     suspend fun fetchNcPlaylists(uid: Long): List<NcPlaylistItem> =
         runCatching {
-            val resp = ncApi.userPlaylist(uid)
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching emptyList()
+            val resp = ncApi.userPlaylist(uid, cookie)
             if (resp.code == 200) resp.playlist else emptyList()
         }.getOrDefault(emptyList())
 
@@ -95,7 +101,9 @@ class UserRepository {
      */
     suspend fun fetchNcLikeList(uid: Long): List<Long> =
         runCatching {
-            val resp = ncApi.likeList(uid)
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching emptyList()
+            val resp = ncApi.likeList(uid, cookie)
             if (resp.code == 200) resp.ids else emptyList()
         }.getOrDefault(emptyList())
 
@@ -105,7 +113,9 @@ class UserRepository {
      */
     suspend fun fetchNcRecord(uid: Long, type: Int = 1): List<top.nekoh2o.player.data.model.NcRecordItem> =
         runCatching {
-            val resp = ncApi.userRecord(uid, type)
+            val cookie = top.nekoh2o.player.data.net.CookieStore.userCookieValue()
+            if (cookie.isEmpty()) return@runCatching emptyList()
+            val resp = ncApi.userRecord(uid, cookie, type)
             if (resp.code == 200) {
                 if (type == 1) resp.weekData else resp.allData
             } else emptyList()
