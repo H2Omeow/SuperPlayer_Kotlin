@@ -46,16 +46,22 @@ fun MineScreen(vm: PlayerViewModel, onStartSsoLogin: () -> Unit) {
         NeteaseScreen(vm) { showNcScreen = false }
         return
     }
+    if (showKgLogin) {
+        KugouLoginScreen(vm) {
+            showKgLogin = false
+            showKgScreen = false
+        }
+        return
+    }
     if (showKgScreen) {
         KugouAccountScreen(
             vm = vm,
             onBack = { showKgScreen = false },
-            onLogin = { showKgLogin = true }
+            onLogin = {
+                showKgScreen = false
+                showKgLogin = true
+            }
         )
-        return
-    }
-    if (showKgLogin) {
-        KugouLoginScreen(vm) { showKgLogin = false }
         return
     }
     if (openedPlaylist in state.playlists.indices) {

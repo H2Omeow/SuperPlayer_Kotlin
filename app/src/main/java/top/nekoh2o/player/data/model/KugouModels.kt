@@ -228,7 +228,30 @@ data class KgSongUrlResp(
 @Serializable
 data class KgSongUrlData(
     val play_url: String = "",
-    val play_backup_url: String = ""
+    val play_backup_url: String = "",
+    val quality: String = "",  // 当前音质
+    val bitrate: Int = 0  // 当前码率
+)
+
+/**
+ * 获取歌曲可用音质列表
+ */
+@Serializable
+data class KgQualityResp(
+    val status: Int = 0,
+    val data: KgQualityData? = null
+)
+
+@Serializable
+data class KgQualityData(
+    val qualities: List<KgQualityItem> = emptyList()
+)
+
+@Serializable
+data class KgQualityItem(
+    val quality: String = "",  // 128/320/flac等
+    val name: String = "",  // 标准/高品/无损
+    val bitrate: Int = 0
 )
 
 /**

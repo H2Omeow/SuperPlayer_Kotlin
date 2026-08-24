@@ -302,9 +302,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             musicSource = source,
             results = emptyList(),
             suggestions = emptyList(),
-            query = ""
+            query = "",
+            recSongs = emptyList(),
+            recPlaylists = emptyList()
         )
         toast("已切换到${if (source == "netease") "网易云音乐" else "酷狗音乐"}")
+        loadRecommend()
     }
 
     // ==================== 酷狗音乐相关 ====================
@@ -336,6 +339,18 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 toast("登录失败")
             }
+        }
+    }
+
+    /**
+     * 酷狗MID+Token登录
+     */
+    fun kgLoginWithToken(mid: String, token: String, platform: Int) {
+        viewModelScope.launch {
+            CookieStore.setKgPlatform(platform)
+            CookieStore.setKgToken(token)
+            toast("登录成功")
+            refreshKgAccount()
         }
     }
 
@@ -502,9 +517,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         if (_ui.value.recLoading) return
         _ui.value = _ui.value.copy(recLoading = true)
         viewModelScope.launch {
-            val pls = runCatching { repo.personalizedPlaylists(8) }.getOrDefault(emptyList())
-            val songs = runCatching { repo.recommendSongs() }.getOrDefault(emptyList())
-            _ui.value = _ui.value.copy(recPlaylists = pls, recSongs = songs, recLoading = false)
+            if (_ui.value.musicSource == "kugou") {
+                // 酷狗推荐
+                val songs = runCatching { kgRepo.getRecommendSongs() }.getOrDefault(emptyList())
+                _ui.value = _ui.value.copy(recPlaylists = emptyList(), recSongs = songs, recLoading = false)
+            } else {
+                // 网易云推荐
+                val pls = runCatching { repo.personalizedPlaylists(8) }.getOrDefault(emptyList())
+                val songs = runCatching { repo.recommendSongs() }.getOrDefault(emptyList())
+                _ui.value = _ui.value.copy(recPlaylists = pls, recSongs = songs, recLoading = false)
+            }
         }
     }
 
@@ -805,6 +827,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             // 同步到云端
             schedulePush()
             toast("Cookie 已保存")
+        }
+    }
+
+    fun saveKgToken(token: String, platform: Int) {
+        viewModelScope.launch {
+            CookieStore.setKgToken(token.trim())
+            CookieStore.setKgPlatform(platform)
+            // 同步到云端
+            schedulePush()
+            toast("酷狗 Token 已保存")
+            if (token.isNotEmpty()) {
+                refreshKgAccount()
+            }
         }
     }
 

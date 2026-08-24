@@ -23,7 +23,10 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
     val state by vm.ui.collectAsState()
     var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
+    var mid by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
     var platform by remember { mutableIntStateOf(state.kgAccount.platform) }
+    var loginMethod by remember { mutableIntStateOf(0) } // 0=验证码 1=MID+Token
     var countdown by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(countdown) {
@@ -81,64 +84,141 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
 
             Text(
-                "手机号登录",
+                "登录方式",
                 style = MaterialTheme.typography.titleMedium
-            )
-
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { phone = it },
-                label = { Text("手机号") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                colors = NekoDefaults.textFieldColors()
             )
 
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it },
-                    label = { Text("验证码") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    colors = NekoDefaults.textFieldColors()
+                FilterChip(
+                    selected = loginMethod == 0,
+                    onClick = { loginMethod = 0 },
+                    label = { Text("验证码登录") },
+                    modifier = Modifier.weight(1f)
                 )
-
-                Button(
-                    onClick = {
-                        if (phone.isNotEmpty()) {
-                            vm.kgSendCode(phone)
-                            countdown = 60
-                        } else {
-                            vm.toast("请输入手机号")
-                        }
-                    },
-                    enabled = countdown == 0 && phone.isNotEmpty()
-                ) {
-                    Text(if (countdown > 0) "${countdown}s" else "获取验证码")
-                }
+                FilterChip(
+                    selected = loginMethod == 1,
+                    onClick = { loginMethod = 1 },
+                    label = { Text("MID+Token") },
+                    modifier = Modifier.weight(1f)
+                )
             }
 
-            Button(
-                onClick = {
-                    if (phone.isEmpty() || code.isEmpty()) {
-                        vm.toast("请填写完整信息")
-                    } else {
-                        vm.kgLogin(phone, code, platform)
-                        onBack()
+            Spacer(Modifier.height(8.dp))
+
+            when (loginMethod) {
+                0 -> {
+                    // 验证码登录
+                    Text(
+                        "手机号验证码登录",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+
+                    OutlinedTextField(
+                        value = phone,
+                        onValueChange = { phone = it },
+                        label = { Text("手机号") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = NekoDefaults.textFieldColors()
+                    )
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = code,
+                            onValueChange = { code = it },
+                            label = { Text("验证码") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            colors = NekoDefaults.textFieldColors()
+                        )
+
+                        Button(
+                            onClick = {
+                                if (phone.isNotEmpty()) {
+                                    vm.kgSendCode(phone)
+                                    countdown = 60
+                                } else {
+                                    vm.toast("请输入手机号")
+                                }
+                            },
+                            enabled = countdown == 0 && phone.isNotEmpty()
+                        ) {
+                            Text(if (countdown > 0) "${countdown}s" else "获取验证码")
+                        }
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = phone.isNotEmpty() && code.isNotEmpty()
-            ) {
-                Text("登录")
+
+                    Button(
+                        onClick = {
+                            if (phone.isEmpty() || code.isEmpty()) {
+                                vm.toast("请填写完整信息")
+                            } else {
+                                vm.kgLogin(phone, code, platform)
+                                onBack()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = phone.isNotEmpty() && code.isNotEmpty()
+                    ) {
+                        Text("登录")
+                    }
+                }
+                1 -> {
+                    // MID+Token登录
+                    Text(
+                        "使用MID和Token登录",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+
+                    OutlinedTextField(
+                        value = mid,
+                        onValueChange = { mid = it },
+                        label = { Text("MID") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = NekoDefaults.textFieldColors()
+                    )
+
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it },
+                        label = { Text("Token") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 5,
+                        colors = NekoDefaults.textFieldColors()
+                    )
+
+                    Button(
+                        onClick = {
+                            if (mid.isEmpty() || token.isEmpty()) {
+                                vm.toast("请填写完整信息")
+                            } else {
+                                vm.kgLoginWithToken(mid, token, platform)
+                                onBack()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = mid.isNotEmpty() && token.isNotEmpty()
+                    ) {
+                        Text("登录")
+                    }
+
+                    Text(
+                        "如何获取MID和Token？\n在酷狗官网或APP登录后，从浏览器开发者工具或抓包工具中获取",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -148,7 +228,8 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
-                "• 使用手机号和验证码登录\n" +
+                "• 验证码登录：使用手机号和验证码登录\n" +
+                "• MID+Token登录：适合从其他设备获取凭证后直接登录\n" +
                 "• 登录凭证会保存在本地并云端同步\n" +
                 "• 概念版支持领取VIP功能（测试接口）\n" +
                 "• 原版和概念版token不通用，需分别登录",

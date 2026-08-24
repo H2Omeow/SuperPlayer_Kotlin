@@ -615,8 +615,14 @@ fun CacheManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 @Composable
 fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
     val state by vm.ui.collectAsState()
-    var cookieText by remember { mutableStateOf(state.ncCookie) }
-    LaunchedEffect(state.ncCookie) { cookieText = state.ncCookie }
+    var ncCookieText by remember { mutableStateOf(state.ncCookie) }
+    var kgTokenText by remember { mutableStateOf("") }
+    var kgPlatform by remember { mutableIntStateOf(state.kgAccount.platform) }
+
+    LaunchedEffect(state.ncCookie) { ncCookieText = state.ncCookie }
+    LaunchedEffect(Unit) {
+        kgTokenText = top.nekoh2o.player.data.net.CookieStore.kgTokenValue()
+    }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -633,8 +639,14 @@ fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 网易云Cookie
+            Text(
+                "网易云 Cookie",
+                style = MaterialTheme.typography.titleMedium
+            )
+
             Text(
                 "填写网易云 Cookie 可获取更高音质和完整歌曲。" +
                         "在网页版网易云音乐登录后，打开浏览器开发者工具，复制请求头中的 Cookie 值粘贴到此处。",
@@ -643,16 +655,17 @@ fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             )
 
             OutlinedTextField(
-                value = cookieText,
-                onValueChange = { cookieText = it },
+                value = ncCookieText,
+                onValueChange = { ncCookieText = it },
                 label = { Text("网易云 Cookie") },
                 modifier = Modifier.fillMaxWidth().height(160.dp),
-                maxLines = 6
+                maxLines = 6,
+                colors = NekoDefaults.textFieldColors()
             )
 
-            if (cookieText.length > 200) {
+            if (ncCookieText.length > 200) {
                 Text(
-                    "Cookie 内容已截断显示，实际长度：${cookieText.length} 字符",
+                    "Cookie 内容已截断显示，实际长度：${ncCookieText.length} 字符",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -660,12 +673,12 @@ fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = { vm.saveNcCookie(cookieText) },
+                    onClick = { vm.saveNcCookie(ncCookieText) },
                     modifier = Modifier.weight(1f)
                 ) { Text("保存") }
                 OutlinedButton(
                     onClick = {
-                        cookieText = ""
+                        ncCookieText = ""
                         vm.saveNcCookie("")
                     },
                     colors = NekoDefaults.outlinedButtonColors()
@@ -681,6 +694,85 @@ fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             } else {
                 Text(
                     "当前未设置 Cookie，将使用游客模式",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            HorizontalDivider()
+
+            // 酷狗Token
+            Text(
+                "酷狗音乐 Token",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Text(
+                "酷狗音乐登录凭证。可在酷狗登录界面登录，或手动填写 Token。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = kgPlatform == 0,
+                    onClick = { kgPlatform = 0 },
+                    label = { Text("原版") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChip(
+                    selected = kgPlatform == 1,
+                    onClick = { kgPlatform = 1 },
+                    label = { Text("概念版") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            OutlinedTextField(
+                value = kgTokenText,
+                onValueChange = { kgTokenText = it },
+                label = { Text("酷狗 Token") },
+                modifier = Modifier.fillMaxWidth().height(160.dp),
+                maxLines = 6,
+                colors = NekoDefaults.textFieldColors()
+            )
+
+            if (kgTokenText.length > 200) {
+                Text(
+                    "Token 内容已截断显示，实际长度：${kgTokenText.length} 字符",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        vm.saveKgToken(kgTokenText, kgPlatform)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("保存") }
+                OutlinedButton(
+                    onClick = {
+                        kgTokenText = ""
+                        vm.saveKgToken("", kgPlatform)
+                    },
+                    colors = NekoDefaults.outlinedButtonColors()
+                ) { Text("清除") }
+            }
+
+            if (kgTokenText.isNotEmpty()) {
+                Text(
+                    "当前 Token 已设置（${if (kgPlatform == 0) "原版" else "概念版"}）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                Text(
+                    "当前未设置 Token，无法使用酷狗音乐",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
