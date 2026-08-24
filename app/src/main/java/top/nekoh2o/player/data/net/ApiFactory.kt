@@ -46,11 +46,10 @@ object ApiFactory {
                                 .header("Authorization", "Bearer $token")
                                 .build()
                         )
-                        // 401 时记录完整 token 用于调试
+                        // 401 时记录完整 token 用于调试（不能读取 body，会导致流关闭）
                         if (resp.code == 401) {
                             android.util.Log.e("ApiFactory", "HTTP 401 for ${req.url}")
                             android.util.Log.e("ApiFactory", "Full token: $token")
-                            android.util.Log.e("ApiFactory", "Response: ${resp.body?.string() ?: "(empty)"}")
                         }
                         resp
                     } else {
