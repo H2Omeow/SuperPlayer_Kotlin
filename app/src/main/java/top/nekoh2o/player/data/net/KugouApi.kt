@@ -121,13 +121,15 @@ interface KugouApi {
      * @param keyword 搜索关键词
      * @param page 页码（从1开始）
      * @param pagesize 每页数量
+     * @param type 搜索类型：song=单曲，special=歌单，lyric=歌词，album=专辑，author=歌手，mv=mv
      * @param platform 平台类型：0=原版，1=概念版
      */
     @GET("kgapi/search")
     suspend fun search(
-        @Query("keyword") keyword: String,
+        @Query("keywords") keyword: String,
         @Query("page") page: Int = 1,
         @Query("pagesize") pagesize: Int = 30,
+        @Query("type") type: String = "song",
         @Query("platform") platform: Int = 0
     ): KgSearchResp
 
@@ -138,7 +140,7 @@ interface KugouApi {
      */
     @GET("kgapi/search/suggest")
     suspend fun searchSuggest(
-        @Query("keyword") keyword: String,
+        @Query("keywords") keyword: String,
         @Query("platform") platform: Int = 0
     ): KgSuggestResp
 
@@ -167,7 +169,7 @@ interface KugouApi {
     /**
      * 获取音乐播放URL
      * @param hash 歌曲hash
-     * @param quality 音质：128/320/flac
+     * @param quality 音质：128/320/flac/high等
      * @param platform 平台类型：0=原版，1=概念版
      */
     @GET("kgapi/song/url")
@@ -176,6 +178,17 @@ interface KugouApi {
         @Query("quality") quality: String = "320",
         @Query("platform") platform: Int = 0
     ): KgSongUrlResp
+
+    /**
+     * 获取音乐播放URL（新版，返回所有音质）
+     * @param hash 歌曲hash
+     * @param platform 平台类型：0=原版，1=概念版
+     */
+    @GET("kgapi/song/url/new")
+    suspend fun getSongUrlNew(
+        @Query("hash") hash: String,
+        @Query("platform") platform: Int = 0
+    ): KgQualityResp
 
     /**
      * 获取歌词

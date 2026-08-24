@@ -129,7 +129,7 @@ class KugouRepository {
     suspend fun search(keyword: String, page: Int = 1): List<Song> =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.search(keyword, page, 30, platform)
+            val resp = api.search(keyword, page, 30, "song", platform)
             if (resp.status == 1) {
                 resp.data?.lists?.map { it.toSong() } ?: emptyList()
             } else emptyList()
@@ -164,6 +164,20 @@ class KugouRepository {
         }.onFailure { e ->
             android.util.Log.e("KugouRepository", "getSongUrl() failed: ${e.message}", e)
         }.getOrNull()
+
+    /**
+     * 获取歌曲可用音质列表
+     */
+    suspend fun getSongQualities(hash: String): List<KgQualityItem> =
+        runCatching {
+            val platform = CookieStore.kgPlatformValue()
+            val resp = api.getSongUrlNew(hash, platform)
+            if (resp.status == 1) {
+                resp.data?.qualities ?: emptyList()
+            } else emptyList()
+        }.onFailure { e ->
+            android.util.Log.e("KugouRepository", "getSongQualities() failed: ${e.message}", e)
+        }.getOrDefault(emptyList())
 
     /**
      * 获取歌词
