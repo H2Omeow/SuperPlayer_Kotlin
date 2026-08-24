@@ -3,6 +3,7 @@ package top.nekoh2o.player.data.net
 import android.content.Context
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CompletableDeferred
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -10,6 +11,10 @@ import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
 
 object ApiFactory {
+
+    private val ready = CompletableDeferred<Unit>()
+
+    suspend fun awaitReady() = ready.await()
 
     const val BASE = "https://player.nekoh2o.top/"
     const val PLAYER_HOST = "player.nekoh2o.top"
@@ -66,6 +71,9 @@ object ApiFactory {
                 }
             )
             .build()
+
+        android.util.Log.d("ApiFactory", "init() completed - marking ready")
+        ready.complete(Unit)
     }
 
     private fun retrofit(baseUrl: String): Retrofit {

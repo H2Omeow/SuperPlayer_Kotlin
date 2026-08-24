@@ -146,8 +146,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }, MoreExecutors.directExecutor())
 
         viewModelScope.launch {
-            // 主动初始化 CookieStore，确保凭据加载完成
-            CookieStore.init(app)
+            // 等待 CookieStore 和 ApiFactory 初始化完成
+            CookieStore.awaitReady()
+            ApiFactory.awaitReady()
             _ui.value = _ui.value.copy(quality = CookieStore.level)
             refreshLoginInternal()
         }
