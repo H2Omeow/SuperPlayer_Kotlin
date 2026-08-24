@@ -38,12 +38,18 @@ object ApiFactory {
             .addInterceptor { chain ->
                 val req = chain.request()
                 val token = CookieStore.appTokenValue()
-                if (req.url.host == PLAYER_HOST && token.isNotEmpty()) {
-                    chain.proceed(
-                        req.newBuilder()
-                            .header("Authorization", "Bearer $token")
-                            .build()
-                    )
+                if (req.url.host == PLAYER_HOST) {
+                    android.util.Log.d("ApiFactory", "Interceptor for ${req.url} - token: ${token.take(20)}... (len=${token.length})")
+                    if (token.isNotEmpty()) {
+                        chain.proceed(
+                            req.newBuilder()
+                                .header("Authorization", "Bearer $token")
+                                .build()
+                        )
+                    } else {
+                        android.util.Log.w("ApiFactory", "Token is EMPTY for player API request!")
+                        chain.proceed(req)
+                    }
                 } else {
                     chain.proceed(req)
                 }

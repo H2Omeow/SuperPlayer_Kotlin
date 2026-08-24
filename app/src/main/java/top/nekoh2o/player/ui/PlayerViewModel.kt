@@ -762,7 +762,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun refreshLoginInternal() {
+        android.util.Log.d("PlayerViewModel", "refreshLoginInternal() - calling fetchMe()")
         val u = userRepo.fetchMe()
+        android.util.Log.d("PlayerViewModel", "refreshLoginInternal() - fetchMe result: $u")
         _ui.value = _ui.value.copy(user = u, loggedIn = u != null)
         if (u != null) pullFromCloud()
     }

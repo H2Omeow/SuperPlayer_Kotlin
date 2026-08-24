@@ -45,6 +45,9 @@ object CookieStore {
             guestCookie = prefs[KEY_GUEST] ?: ""
             appToken = prefs[KEY_APP_TOKEN] ?: ""
             level = prefs[KEY_LEVEL] ?: "exhigh"
+
+            android.util.Log.d("CookieStore", "init() - appToken loaded: ${appToken.take(20)}... (len=${appToken.length})")
+
             ready.complete(Unit)
         }
     }
@@ -77,9 +80,13 @@ object CookieStore {
     fun hasAnyCookie(): Boolean = activeCookie().isNotEmpty()
 
     // ==================== SSO app_token ====================
-    fun appTokenValue(): String = appToken
+    fun appTokenValue(): String {
+        android.util.Log.d("CookieStore", "appTokenValue() called - returning: ${appToken.take(20)}... (len=${appToken.length})")
+        return appToken
+    }
 
     suspend fun setAppToken(token: String) {
+        android.util.Log.d("CookieStore", "setAppToken() - saving: ${token.take(20)}... (len=${token.length})")
         appToken = token
         appContext.dataStore.edit { it[KEY_APP_TOKEN] = token }
     }
