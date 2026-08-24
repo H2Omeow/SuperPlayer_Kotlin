@@ -41,11 +41,18 @@ object ApiFactory {
                 if (req.url.host == PLAYER_HOST) {
                     android.util.Log.d("ApiFactory", "Interceptor for ${req.url} - token: ${token.take(20)}... (len=${token.length})")
                     if (token.isNotEmpty()) {
-                        chain.proceed(
+                        val resp = chain.proceed(
                             req.newBuilder()
                                 .header("Authorization", "Bearer $token")
                                 .build()
                         )
+                        // 401 时记录完整 token 用于调试
+                        if (resp.code == 401) {
+                            android.util.Log.e("ApiFactory", "HTTP 401 for ${req.url}")
+                            android.util.Log.e("ApiFactory", "Full token: $token")
+                            android.util.Log.e("ApiFactory", "Response: ${resp.body?.string() ?: "(empty)"}")
+                        }
+                        resp
                     } else {
                         android.util.Log.w("ApiFactory", "Token is EMPTY for player API request!")
                         chain.proceed(req)
