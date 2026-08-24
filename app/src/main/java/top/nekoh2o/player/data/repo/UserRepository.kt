@@ -35,10 +35,12 @@ class UserRepository {
         history: List<Song>,
         favorites: List<Song>,
         playlists: List<Playlist>,
-        ncCookie: String
+        ncCookie: String,
+        kgToken: String = "",
+        kgPlatform: Int = 0
     ) {
         runCatching {
-            api.pushData(UserData(history, favorites, playlists, ncCookie))
+            api.pushData(UserData(history, favorites, playlists, ncCookie, kgToken, kgPlatform))
         }
     }
 

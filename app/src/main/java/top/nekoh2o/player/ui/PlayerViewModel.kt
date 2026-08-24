@@ -90,7 +90,11 @@ data class UiState(
     // 网易云 Cookie（用于设置页展示/编辑）
     val ncCookie: String = "",
     // 网易云账号信息
-    val ncAccount: NcAccountState = NcAccountState()
+    val ncAccount: NcAccountState = NcAccountState(),
+    // 音乐源切换：netease | kugou
+    val musicSource: String = "netease",
+    // 酷狗账号信息
+    val kgAccount: KgAccountState = KgAccountState()
 ) {
     val current: Song? get() = queue.getOrNull(currentIndex)
 }
@@ -105,11 +109,23 @@ data class NcAccountState(
     val isValid: Boolean = false  // Cookie 是否有效
 )
 
+// 酷狗账号信息 UI 状态
+data class KgAccountState(
+    val userId: Long = 0,
+    val nickname: String = "",
+    val avatar: String? = null,
+    val vipType: Int = 0,  // 0=普通 1=VIP 2=豪华VIP
+    val vipEndTime: Long = 0,
+    val isValid: Boolean = false,  // Token 是否有效
+    val platform: Int = 0  // 0=原版 1=概念版
+)
+
 class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = MusicRepository()
     private val userRepo = UserRepository()
     private val ncRepo = top.nekoh2o.player.data.repo.NeteaseRepository()
+    private val kgRepo = top.nekoh2o.player.data.repo.KugouRepository()
     private val local = (app as PlayerApp).localStore
     private val settingsStore = SettingsStore(app)
 
@@ -276,6 +292,102 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             )
             .build()
 
+    // ==================== 音乐源切换 ====================
+
+    /**
+     * 切换音乐源（网易云/酷狗）
+     */
+    fun switchMusicSource(source: String) {
+        _ui.value = _ui.value.copy(
+            musicSource = source,
+            results = emptyList(),
+            suggestions = emptyList(),
+            query = ""
+        )
+        toast("已切换到${if (source == "netease") "网易云音乐" else "酷狗音乐"}")
+    }
+
+    // ==================== 酷狗音乐相关 ====================
+
+    /**
+     * 酷狗发送验证码
+     */
+    fun kgSendCode(phone: String) {
+        viewModelScope.launch {
+            val success = kgRepo.sendCode(phone)
+            if (success) {
+                toast("验证码已发送")
+            } else {
+                toast("发送验证码失败")
+            }
+        }
+    }
+
+    /**
+     * 酷狗登录
+     */
+    fun kgLogin(phone: String, code: String, platform: Int) {
+        viewModelScope.launch {
+            CookieStore.setKgPlatform(platform)
+            val data = kgRepo.login(phone, code)
+            if (data != null) {
+                toast("登录成功")
+                refreshKgAccount()
+            } else {
+                toast("登录失败")
+            }
+        }
+    }
+
+    /**
+     * 刷新酷狗账号信息
+     */
+    fun refreshKgAccount() {
+        viewModelScope.launch {
+            val userInfo = kgRepo.getUserInfo()
+            val vipInfo = kgRepo.getVipInfo()
+            if (userInfo != null) {
+                _ui.value = _ui.value.copy(
+                    kgAccount = KgAccountState(
+                        userId = userInfo.userid,
+                        nickname = userInfo.nickname,
+                        avatar = userInfo.avatar,
+                        vipType = vipInfo?.vipType ?: 0,
+                        vipEndTime = vipInfo?.endTime ?: 0,
+                        isValid = true,
+                        platform = CookieStore.kgPlatformValue()
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * 领取酷狗VIP（概念版）
+     */
+    fun kgReceiveVip(vipType: Int, days: Int) {
+        viewModelScope.launch {
+            val result = kgRepo.receiveVip(vipType, days)
+            toast(result ?: "领取失败")
+            if (result != null && !result.contains("失败")) {
+                refreshKgAccount()
+            }
+        }
+    }
+
+    /**
+     * 切换酷狗平台版本
+     */
+    fun kgSwitchPlatform(platform: Int) {
+        viewModelScope.launch {
+            CookieStore.setKgPlatform(platform)
+            _ui.value = _ui.value.copy(
+                kgAccount = _ui.value.kgAccount.copy(platform = platform)
+            )
+            toast("已切换到${if (platform == 0) "原版" else "概念版"}")
+        }
+    }
+
     // ==================== 搜索 ====================
     fun onQueryChange(q: String) {
         _ui.value = _ui.value.copy(query = q)
@@ -286,7 +398,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
         suggestJob = viewModelScope.launch {
             delay(300)
-            val s = runCatching { repo.suggest(q.trim()) }.getOrDefault(emptyList())
+            val s = if (_ui.value.musicSource == "kugou") {
+                runCatching { kgRepo.searchSuggest(q.trim()) }.getOrDefault(emptyList())
+            } else {
+                runCatching { repo.suggest(q.trim()) }.getOrDefault(emptyList())
+            }
             _ui.value = _ui.value.copy(suggestions = s)
         }
     }
@@ -313,7 +429,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             when (_ui.value.searchType) {
                 SearchType.SONG -> {
-                    val list = runCatching { repo.search(kw, 0) }.getOrDefault(emptyList())
+                    val list = if (_ui.value.musicSource == "kugou") {
+                        runCatching { kgRepo.search(kw, 1) }.getOrDefault(emptyList())
+                    } else {
+                        runCatching { repo.search(kw, 0) }.getOrDefault(emptyList())
+                    }
                     searchOffset = list.size
                     _ui.value = _ui.value.copy(results = list, searching = false, hasMore = list.size >= 30)
                 }
@@ -337,7 +457,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             when (_ui.value.searchType) {
                 SearchType.SONG -> {
-                    val more = runCatching { repo.search(searchKeyword, searchOffset) }.getOrDefault(emptyList())
+                    val more = if (_ui.value.musicSource == "kugou") {
+                        val page = (searchOffset / 30) + 1
+                        runCatching { kgRepo.search(searchKeyword, page) }.getOrDefault(emptyList())
+                    } else {
+                        runCatching { repo.search(searchKeyword, searchOffset) }.getOrDefault(emptyList())
+                    }
                     searchOffset += more.size
                     _ui.value = _ui.value.copy(results = _ui.value.results + more, hasMore = more.size >= 30)
                 }
@@ -719,10 +844,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun downloadSong(song: Song, quality: String = _ui.value.quality) {
         if (DownloadIndex.isDownloaded(song.id)) { toast("已下载过该歌曲"); return }
         viewModelScope.launch {
-            val url = runCatching { repo.resolvePlayUrl(song.id, quality) }.getOrNull()
+            val url = runCatching { repo.resolvePlayUrl(song, quality) }.getOrNull()
             if (url == null) { toast("获取下载地址失败"); return@launch }
             // 拉取歌词一并保存为 .lrc（失败则跳过，播放时回退网络）
-            val lrcText = runCatching { repo.lyric(song.id) }.getOrNull()
+            val lrcText = runCatching { repo.lyric(song) }.getOrNull()
                 ?.takeIf { it.isNotEmpty() }?.let { buildLrcText(it) }
             val dirUri = _ui.value.settings.downloadDirUri.ifBlank { null }
             toast("开始下载：${song.nm}")
@@ -896,8 +1021,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             if (remote.ncCookie.isNotEmpty()) {
                 CookieStore.setUserCookie(remote.ncCookie)
             }
+            if (remote.kgToken.isNotEmpty()) {
+                CookieStore.setKgToken(remote.kgToken)
+                CookieStore.setKgPlatform(remote.kgPlatform)
+            }
             pushMineToState()
             schedulePush()
+            refreshKgAccount()
         }
     }
 
@@ -910,7 +1040,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 history = local.history.toList(),
                 favorites = local.favorites.toList(),
                 playlists = local.playlists.toList(),
-                ncCookie = CookieStore.userCookieValue()
+                ncCookie = CookieStore.userCookieValue(),
+                kgToken = CookieStore.kgTokenValue(),
+                kgPlatform = CookieStore.kgPlatformValue()
             )
         }
     }

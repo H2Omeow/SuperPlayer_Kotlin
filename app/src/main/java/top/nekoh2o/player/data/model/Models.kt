@@ -9,7 +9,8 @@ data class Song(
     val id: Long,
     val nm: String,
     val ar: String,
-    val pc: String? = null
+    val pc: String? = null,
+    val source: String = "netease"  // netease | kugou
 )
 
 // 自定义歌单（对应 web customPlaylists）
@@ -211,7 +212,9 @@ data class UserData(
     val history: List<Song> = emptyList(),
     val favorites: List<Song> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
-    val ncCookie: String = ""
+    val ncCookie: String = "",
+    val kgToken: String = "",
+    val kgPlatform: Int = 0
 )
 
 // ==================== 壁纸 /local/wallpaper/list ====================

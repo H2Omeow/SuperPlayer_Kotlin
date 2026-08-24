@@ -12,9 +12,11 @@ import kotlinx.coroutines.sync.withLock
 private val Context.dataStore by preferencesDataStore("player_prefs")
 
 /**
- * 网易云 cookie 管理 + SSO app_token：
- * - userCookie：QR/手动登录得到，优先使用（对应 web napcat_nc_cookie）
- * - guestCookie：首启拉 /register/anonimous 兜底（对应 nc_guest_cookie）
+ * 网易云 cookie 管理 + 酷狗 token + SSO app_token：
+ * - userCookie：网易云QR/手动登录得到，优先使用（对应 web napcat_nc_cookie）
+ * - guestCookie：网易云首启拉 /register/anonimous 兜底（对应 nc_guest_cookie）
+ * - kgToken：酷狗音乐登录token
+ * - kgPlatform：酷狗音乐平台类型（0=原版，1=概念版）
  * - level：音质档位
  * - appToken：SSO 登录后服务端下发的 Bearer token，App 用它鉴权 player 域名接口
  * 除 DataStore 落地外，额外用内存缓存，供拦截器/播放线程同步读取。
@@ -25,11 +27,15 @@ object CookieStore {
     private val KEY_GUEST = stringPreferencesKey("nc_guest_cookie")
     private val KEY_LEVEL = stringPreferencesKey("quality_level")
     private val KEY_APP_TOKEN = stringPreferencesKey("app_token")
+    private val KEY_KG_TOKEN = stringPreferencesKey("kg_token")
+    private val KEY_KG_PLATFORM = stringPreferencesKey("kg_platform")
 
     private lateinit var appContext: Context
     @Volatile private var userCookie: String = ""
     @Volatile private var guestCookie: String = ""
     @Volatile private var appToken: String = ""
+    @Volatile private var kgToken: String = ""
+    @Volatile private var kgPlatform: String = "0"  // 0=原版，1=概念版
     @Volatile var level: String = "exhigh"
         private set
     private val ready = CompletableDeferred<Unit>()
@@ -44,9 +50,12 @@ object CookieStore {
             userCookie = prefs[KEY_USER] ?: ""
             guestCookie = prefs[KEY_GUEST] ?: ""
             appToken = prefs[KEY_APP_TOKEN] ?: ""
+            kgToken = prefs[KEY_KG_TOKEN] ?: ""
+            kgPlatform = prefs[KEY_KG_PLATFORM] ?: "0"
             level = prefs[KEY_LEVEL] ?: "exhigh"
 
             android.util.Log.d("CookieStore", "init() - appToken loaded: ${appToken.take(20)}... (len=${appToken.length})")
+            android.util.Log.d("CookieStore", "init() - kgToken loaded: ${kgToken.take(20)}... (len=${kgToken.length})")
 
             ready.complete(Unit)
         }
@@ -96,5 +105,29 @@ object CookieStore {
     suspend fun clearAppToken() {
         appToken = ""
         appContext.dataStore.edit { it.remove(KEY_APP_TOKEN) }
+    }
+
+    // ==================== 酷狗 token ====================
+    fun kgTokenValue(): String = kgToken
+
+    suspend fun setKgToken(token: String) {
+        android.util.Log.d("CookieStore", "setKgToken() - saving: ${token.take(20)}... (len=${token.length})")
+        kgToken = token
+        appContext.dataStore.edit { it[KEY_KG_TOKEN] = token }
+    }
+
+    suspend fun clearKgToken() {
+        kgToken = ""
+        appContext.dataStore.edit { it.remove(KEY_KG_TOKEN) }
+    }
+
+    fun hasKgToken(): Boolean = kgToken.isNotEmpty()
+
+    // 酷狗平台类型：0=原版，1=概念版
+    fun kgPlatformValue(): Int = kgPlatform.toIntOrNull() ?: 0
+
+    suspend fun setKgPlatform(platform: Int) {
+        kgPlatform = platform.toString()
+        appContext.dataStore.edit { it[KEY_KG_PLATFORM] = kgPlatform }
     }
 }

@@ -63,13 +63,34 @@ fun MusicScreen(vm: PlayerViewModel) {
     }
 
     Column(Modifier.fillMaxSize()) {
+        // 音乐源切换按钮
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = state.musicSource == "netease",
+                onClick = { vm.switchMusicSource("netease") },
+                label = { Text("网易云音乐") },
+                modifier = Modifier.weight(1f)
+            )
+            FilterChip(
+                selected = state.musicSource == "kugou",
+                onClick = { vm.switchMusicSource("kugou") },
+                label = { Text("酷狗音乐") },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
         // 搜索框
         OutlinedTextField(
             value = state.query,
             onValueChange = vm::onQueryChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             placeholder = { Text("搜索${state.searchType.label}") },
             trailingIcon = {
                 IconButton(onClick = { vm.doSearch() }) {

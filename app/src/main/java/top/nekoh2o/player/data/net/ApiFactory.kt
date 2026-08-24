@@ -100,5 +100,9 @@ object ApiFactory {
         retrofit(BASE).create(NeteaseApi::class.java)
     }
 
+    val kugou: KugouApi by lazy {
+        retrofit(BASE).create(KugouApi::class.java)
+    }
+
     fun client(): OkHttpClient = httpClient
 }

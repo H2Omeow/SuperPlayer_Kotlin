@@ -34,6 +34,8 @@ fun MineScreen(vm: PlayerViewModel, onStartSsoLogin: () -> Unit) {
     var showQrLogin by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showNcScreen by remember { mutableStateOf(false) }
+    var showKgScreen by remember { mutableStateOf(false) }
+    var showKgLogin by remember { mutableStateOf(false) }
     val titles = listOf("播放记录", "我的收藏", "自定义歌单")
 
     if (showSettings) {
@@ -42,6 +44,18 @@ fun MineScreen(vm: PlayerViewModel, onStartSsoLogin: () -> Unit) {
     }
     if (showNcScreen) {
         NeteaseScreen(vm) { showNcScreen = false }
+        return
+    }
+    if (showKgScreen) {
+        KugouAccountScreen(
+            vm = vm,
+            onBack = { showKgScreen = false },
+            onLogin = { showKgLogin = true }
+        )
+        return
+    }
+    if (showKgLogin) {
+        KugouLoginScreen(vm) { showKgLogin = false }
         return
     }
     if (openedPlaylist in state.playlists.indices) {
@@ -55,6 +69,7 @@ fun MineScreen(vm: PlayerViewModel, onStartSsoLogin: () -> Unit) {
             onLogin = onStartSsoLogin,
             onLogout = { vm.logout() },
             onNetease = { showNcScreen = true },
+            onKugou = { showKgScreen = true },
             onSettings = { showSettings = true }
         )
         TabRow(selectedTabIndex = tab) {
@@ -80,6 +95,7 @@ private fun UserCard(
     onLogin: () -> Unit,
     onLogout: () -> Unit,
     onNetease: () -> Unit,
+    onKugou: () -> Unit,
     onSettings: () -> Unit
 ) {
     ElevatedCard(Modifier.fillMaxWidth().padding(12.dp)) {
@@ -123,7 +139,10 @@ private fun UserCard(
                 } else {
                     TextButton(onClick = onLogin, colors = NekoDefaults.textButtonColors()) { Text("登录") }
                 }
-                TextButton(onClick = onNetease, colors = NekoDefaults.textButtonColors()) { Text("网易云") }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onNetease, colors = NekoDefaults.textButtonColors()) { Text("网易云") }
+                    TextButton(onClick = onKugou, colors = NekoDefaults.textButtonColors()) { Text("酷狗") }
+                }
             }
         }
     }
