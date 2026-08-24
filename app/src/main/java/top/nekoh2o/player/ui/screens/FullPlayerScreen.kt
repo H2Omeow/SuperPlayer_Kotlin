@@ -297,7 +297,12 @@ private fun QualityDialog(current: String, onSelect: (String) -> Unit, onDismiss
         "standard" to "标准 128k",
         "higher" to "较高 192k",
         "exhigh" to "极高 320k",
-        "lossless" to "无损 FLAC"
+        "lossless" to "无损 SQ",
+        "hires" to "Hi-Res 无损 48kHz/16bit",
+        "jyeffect" to "高清臻音 96kHz/24bit",
+        "sky" to "沉浸环绕声 5.1声道",
+        "jymaster" to "超清母带 192kHz/24bit",
+        "dolby" to "臻音全景声 7.1.4声道"
     )
     AlertDialog(
         onDismissRequest = onDismiss,
