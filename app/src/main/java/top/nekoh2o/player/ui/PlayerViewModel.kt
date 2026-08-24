@@ -764,10 +764,37 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun refreshLoginInternal() {
         android.util.Log.d("PlayerViewModel", "refreshLoginInternal() - calling fetchMe()")
-        val u = userRepo.fetchMe()
-        android.util.Log.d("PlayerViewModel", "refreshLoginInternal() - fetchMe result: $u")
-        _ui.value = _ui.value.copy(user = u, loggedIn = u != null)
-        if (u != null) pullFromCloud()
+
+        var attempts = 0
+        var lastError: Exception? = null
+
+        while (attempts < 3) {
+            attempts++
+            android.util.Log.d("PlayerViewModel", "refreshLoginInternal() - attempt $attempts/3")
+
+            val u = runCatching { userRepo.fetchMe() }.getOrElse { e ->
+                lastError = e as? Exception
+                android.util.Log.e("PlayerViewModel", "refreshLoginInternal() - attempt $attempts failed: ${e.message}")
+                null
+            }
+
+            if (u != null) {
+                android.util.Log.d("PlayerViewModel", "refreshLoginInternal() - success: $u")
+                _ui.value = _ui.value.copy(user = u, loggedIn = true)
+                pullFromCloud()
+                return
+            }
+
+            // 失败后等待一小段时间再重试
+            if (attempts < 3) {
+                kotlinx.coroutines.delay(500L * attempts)
+            }
+        }
+
+        // 三次失败后提示
+        android.util.Log.e("PlayerViewModel", "refreshLoginInternal() - all attempts failed")
+        _ui.value = _ui.value.copy(user = null, loggedIn = false)
+        toast("网络异常或登录已失效，请重新登录")
     }
 
     fun onSsoLoggedIn() = refreshLogin()
