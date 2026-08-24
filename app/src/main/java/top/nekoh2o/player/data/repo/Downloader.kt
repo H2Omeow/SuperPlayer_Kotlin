@@ -67,20 +67,21 @@ object Downloader {
             val audioFileName = "$safeName.$ext"
             val lrcFileName   = "$safeName.lrc"
 
-            // 获取音频字节（带进度回调）
-            val bytes = fetchWithProgress(url) { prog ->
-                updateTask(song.id) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
-            }
-
-            // 写入音频
+            // 流式写入音频（避免OOM）
             val audioUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 if (!dirUri.isNullOrEmpty()) {
-                    writeSafQ(context, dirUri, audioFileName, mime, bytes)
+                    downloadStreamSafQ(context, dirUri, audioFileName, mime, url) { prog ->
+                        updateTask(song.id) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
+                    }
                 } else {
-                    writeMediaStore(context, audioFileName, mime, bytes)
+                    downloadStreamMediaStore(context, audioFileName, mime, url) { prog ->
+                        updateTask(song.id) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
+                    }
                 }
             } else {
-                writePublicDir(audioFileName, bytes)
+                downloadStreamPublicDir(audioFileName, url) { prog ->
+                    updateTask(song.id) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
+                }
             }
 
             // 写入 .lrc
@@ -121,6 +122,113 @@ object Downloader {
         _tasks.update { list -> list.map { if (it.song.id == songId) transform(it) else it } }
     }
 
+    // 流式下载到 MediaStore（Android 10+）
+    private fun downloadStreamMediaStore(
+        context: Context,
+        fileName: String,
+        mime: String,
+        url: String,
+        onProgress: (Float) -> Unit
+    ): String {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/$DEFAULT_SUB_DIR")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val uri = resolver.insert(collection, values) ?: error("无法创建媒体文件")
+
+        try {
+            resolver.openOutputStream(uri)?.use { outputStream ->
+                downloadToStream(url, outputStream, onProgress)
+            } ?: error("无法写入")
+
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            return uri.toString()
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            throw e
+        }
+    }
+
+    // 流式下载到 SAF 目录（Android 10+）
+    private fun downloadStreamSafQ(
+        context: Context,
+        treeUriStr: String,
+        fileName: String,
+        mime: String,
+        url: String,
+        onProgress: (Float) -> Unit
+    ): String {
+        val treeUri = Uri.parse(treeUriStr)
+        val dir = DocumentFile.fromTreeUri(context, treeUri) ?: error("无法访问下载目录")
+        val existing = dir.findFile(fileName)
+        existing?.delete()
+        val file = dir.createFile(mime, fileName) ?: error("无法在自定义目录创建文件")
+
+        try {
+            context.contentResolver.openOutputStream(file.uri)?.use { outputStream ->
+                downloadToStream(url, outputStream, onProgress)
+            } ?: error("无法写入")
+            return file.uri.toString()
+        } catch (e: Exception) {
+            file.delete()
+            throw e
+        }
+    }
+
+    // 流式下载到公共目录（Android 9 及以下）
+    private fun downloadStreamPublicDir(
+        fileName: String,
+        url: String,
+        onProgress: (Float) -> Unit
+    ): String {
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
+            DEFAULT_SUB_DIR
+        )
+        if (!dir.exists()) dir.mkdirs()
+        val file = File(dir, fileName)
+
+        FileOutputStream(file).use { outputStream ->
+            downloadToStream(url, outputStream, onProgress)
+        }
+        return file.absolutePath
+    }
+
+    // 通用流式下载方法（边下载边写入，不占用大量内存）
+    private fun downloadToStream(
+        url: String,
+        outputStream: java.io.OutputStream,
+        onProgress: (Float) -> Unit
+    ) {
+        val req = Request.Builder().url(url).build()
+        ApiFactory.client().newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) error("HTTP ${resp.code}")
+            val body = resp.body ?: error("空响应")
+            val total = body.contentLength().takeIf { it > 0 }
+            val inputStream = body.byteStream()
+
+            var downloaded = 0L
+            val buffer = ByteArray(8192)
+
+            while (true) {
+                val n = inputStream.read(buffer)
+                if (n == -1) break
+                outputStream.write(buffer, 0, n)
+                downloaded += n
+                if (total != null) {
+                    onProgress((downloaded.toFloat() / total).coerceIn(0f, 1f))
+                }
+            }
+        }
+    }
+
+    @Deprecated("使用流式下载方法替代，避免OOM")
     private fun fetchWithProgress(url: String, onProgress: (Float) -> Unit): ByteArray {
         val req = Request.Builder().url(url).build()
         ApiFactory.client().newCall(req).execute().use { resp ->
@@ -142,7 +250,8 @@ object Downloader {
         }
     }
 
-    // MediaStore 写入（Android 10+，无自定义 SAF 目录时）
+    // MediaStore 写入（已废弃，使用流式下载方法）
+    @Deprecated("使用 downloadStreamMediaStore 替代")
     private fun writeMediaStore(context: Context, fileName: String, mime: String, bytes: ByteArray): String {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
@@ -159,7 +268,8 @@ object Downloader {
         return uri.toString()
     }
 
-    // SAF 写入（Android 10+，用户自定义目录）
+    // SAF 写入（已废弃，使用流式下载方法）
+    @Deprecated("使用 downloadStreamSafQ 替代")
     private fun writeSafQ(context: Context, treeUriStr: String, fileName: String, mime: String, bytes: ByteArray): String {
         val treeUri = Uri.parse(treeUriStr)
         val dir = DocumentFile.fromTreeUri(context, treeUri) ?: error("无法访问下载目录")
