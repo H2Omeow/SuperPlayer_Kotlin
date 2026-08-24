@@ -32,6 +32,33 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
     val active = state.downloadTasks.filter { it.status != DownloadStatus.DONE }
     val done = state.downloadedSongs
 
+    var showDeleteConfirm by remember { mutableStateOf<Long?>(null) }
+
+    // 删除确认对话框
+    if (showDeleteConfirm != null) {
+        val song = done.find { it.songId == showDeleteConfirm }
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = null },
+            title = { Text("删除文件") },
+            text = { Text("确定要删除「${song?.song?.nm ?: "该歌曲"}」及其文件吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm?.let { vm.removeDownloaded(it) }
+                        showDeleteConfirm = null
+                    },
+                    colors = NekoDefaults.textButtonColors()
+                ) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirm = null },
+                    colors = NekoDefaults.textButtonColors()
+                ) { Text("取消") }
+            }
+        )
+    }
+
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text("下载管理") },
@@ -56,7 +83,12 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                         modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
                     )
                 }
-                items(active, key = { it.song.id }) { task -> ActiveTaskRow(task) }
+                items(active, key = { it.song.id }) { task ->
+                    ActiveTaskRow(
+                        task = task,
+                        onRetry = { vm.retryDownload(task.song, task.quality) }
+                    )
+                }
             }
 
             if (done.isNotEmpty()) {
@@ -71,7 +103,7 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                     DownloadedRow(
                         item = d,
                         onPlay = { vm.playNow(d.song) },
-                        onRemove = { vm.removeDownloaded(d.songId) }
+                        onRemove = { showDeleteConfirm = d.songId }
                     )
                     HorizontalDivider()
                 }
@@ -81,7 +113,7 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun ActiveTaskRow(task: DownloadTask) {
+private fun ActiveTaskRow(task: DownloadTask, onRetry: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -113,8 +145,12 @@ private fun ActiveTaskRow(task: DownloadTask) {
         }
         Spacer(Modifier.width(8.dp))
         if (task.status == DownloadStatus.FAILED) {
-            Icon(Icons.Filled.ErrorOutline, contentDescription = "失败",
-                tint = MaterialTheme.colorScheme.error)
+            TextButton(
+                onClick = onRetry,
+                colors = NekoDefaults.textButtonColors()
+            ) {
+                Text("重试")
+            }
         } else {
             Text("${(task.progress * 100).toInt()}%",
                 style = MaterialTheme.typography.labelMedium)

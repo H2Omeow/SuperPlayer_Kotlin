@@ -737,11 +737,43 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 删除一首已下载歌曲的索引记录（不物理删除文件，避免误删用户文件）。 */
+    /** 删除一首已下载歌曲（同时删除索引和文件）。 */
     fun removeDownloaded(songId: Long) {
+        val downloaded = DownloadIndex.get(songId)
+        if (downloaded != null) {
+            // 删除音频文件
+            runCatching {
+                val audioUri = android.net.Uri.parse(downloaded.audioUri)
+                if (audioUri.scheme == "content") {
+                    getApplication<android.app.Application>().contentResolver.delete(audioUri, null, null)
+                } else {
+                    java.io.File(downloaded.audioUri).delete()
+                }
+            }.onFailure { e ->
+                android.util.Log.w("PlayerViewModel", "删除音频文件失败: ${e.message}")
+            }
+            // 删除歌词文件
+            downloaded.lrcPath?.let { lrcPath ->
+                runCatching {
+                    val lrcUri = android.net.Uri.parse(lrcPath)
+                    if (lrcUri.scheme == "content") {
+                        getApplication<android.app.Application>().contentResolver.delete(lrcUri, null, null)
+                    } else {
+                        java.io.File(lrcPath).delete()
+                    }
+                }.onFailure { e ->
+                    android.util.Log.w("PlayerViewModel", "删除歌词文件失败: ${e.message}")
+                }
+            }
+        }
         DownloadIndex.remove(songId)
         _ui.value = _ui.value.copy(downloadedSongs = DownloadIndex.all())
-        toast("已从下载列表移除")
+        toast("已删除文件")
+    }
+
+    /** 重试失败的下载任务 */
+    fun retryDownload(song: Song, quality: String) {
+        downloadSong(song, quality)
     }
 
     /** 设置自定义下载目录（SAF tree URI）。 */
