@@ -96,5 +96,9 @@ object ApiFactory {
         retrofit(BASE).create(UserApi::class.java)
     }
 
+    val netease: NeteaseApi by lazy {
+        retrofit(BASE).create(NeteaseApi::class.java)
+    }
+
     fun client(): OkHttpClient = httpClient
 }

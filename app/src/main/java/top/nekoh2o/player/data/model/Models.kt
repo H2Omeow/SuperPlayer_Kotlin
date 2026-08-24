@@ -186,7 +186,18 @@ data class User(
     val username: String? = null,
     val nickname: String? = null,
     val avatar: String? = null,
-    val bio: String? = null
+    val bio: String? = null,
+    val ncAccount: NcAccountInfo? = null
+)
+
+// 网易云账户信息（从后端获取）
+@Serializable
+data class NcAccountInfo(
+    val uid: Long = 0,
+    val nickname: String = "",
+    val avatarUrl: String? = null,
+    val vipType: Int = 0,  // 0=普通 1=VIP 11=SVIP
+    val vipExpireTime: Long = 0  // 毫秒时间戳
 )
 
 // ==================== 云端用户数据 /user/data ====================
@@ -289,6 +300,27 @@ data class CachedItem(
     val sizeBytes: Long = 0L
 )
 
+// ==================== 音质选项枚举 ====================
+enum class QualityLevel(val value: String, val label: String, val minVipType: Int, val description: String) {
+    STANDARD("standard", "标准", 0, "标准音质"),
+    HIGHER("higher", "较高", 0, "较高音质"),
+    EXHIGH("exhigh", "极高", 0, "极高音质"),
+    LOSSLESS("lossless", "无损 SQ", 11, "高保真无损音质，最高48kHz/16bit"),
+    HIRES("hires", "Hi-Res", 11, "高清臻音 96kHz/24bit"),
+    JYEFFECT("jyeffect", "高清臻音", 11, "Spatial Audio 沉浸感"),
+    SKY("sky", "沉浸环绕声", 12, "Surround Audio 环绕音感 最高5.1声道"),
+    JYMASTER("jymaster", "超清母带", 12, "Master 极致细节 192kHz/24bit"),
+    DOLBY("dolby", "臻音全景声", 12, "Audio Vivid 沉浸三维空间音频，最高7.1.4声道");
+
+    companion object {
+        fun fromValue(v: String): QualityLevel = entries.find { it.value == v } ?: EXHIGH
+
+        // 根据会员类型返回可用的音质列表
+        fun availableQualities(vipType: Int): List<QualityLevel> =
+            entries.filter { it.minVipType <= vipType }
+    }
+}
+
 // ==================== 个性化设置 ====================
 enum class BgSource { WALLPAPER, COVER }
 
@@ -314,5 +346,7 @@ data class AppSettings(
     // 悬浮窗歌词：显示翻译行（若歌词含翻译）
     val floatingLyricShowTranslation: Boolean = true,
     // 下载目录：SAF tree URI 字符串（空串 = 默认 Music/NekoPlayer/）
-    val downloadDirUri: String = ""
+    val downloadDirUri: String = "",
+    // 音质选项：standard/higher/exhigh/lossless/hires/jyeffect/sky/dolby/jymaster
+    val audioQuality: String = "exhigh"
 )

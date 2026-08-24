@@ -87,6 +87,18 @@ class MusicRepository {
         } ?: emptyList()
     }
 
+    // 批量获取歌曲详情
+    suspend fun songsByIds(ids: List<Long>): List<Song> {
+        if (ids.isEmpty()) return emptyList()
+        val idsStr = ids.joinToString(",")
+        val resp = runCatching { api.songDetail(idsStr) }.getOrNull() ?: return emptyList()
+        return if (resp.code == 200 && resp.songs.isNotEmpty()) {
+            resp.songs.map {
+                Song(it.id, it.name, it.ar.firstOrNull()?.name ?: "未知", it.al?.picUrl)
+            }
+        } else emptyList()
+    }
+
     // ---------- 歌词 ----------
     suspend fun lyric(id: Long): List<LyricLine> {
         val neu = runCatching { api.lyricNew(id) }.getOrNull()

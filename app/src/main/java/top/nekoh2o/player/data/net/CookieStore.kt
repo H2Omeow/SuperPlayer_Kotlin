@@ -79,6 +79,8 @@ object CookieStore {
 
     fun hasAnyCookie(): Boolean = activeCookie().isNotEmpty()
 
+    fun hasNcUserCookie(): Boolean = userCookie.isNotEmpty()
+
     // ==================== SSO app_token ====================
     fun appTokenValue(): String {
         android.util.Log.d("CookieStore", "appTokenValue() called - returning: ${appToken.take(20)}... (len=${appToken.length})")

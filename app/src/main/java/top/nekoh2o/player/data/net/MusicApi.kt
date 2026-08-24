@@ -95,4 +95,36 @@ interface MusicApi {
     // ========== 专辑内容 ==========
     @GET("api/album")
     suspend fun albumContent(@Query("id") id: Long): AlbumContentResp
+
+    // ========== 网易云账号信息 ==========
+    @GET("api/user/account")
+    suspend fun userAccount(@Query("cookie") cookie: String): NcAccountResp
+
+    // ========== 登录状态检测 ==========
+    @GET("api/login/status")
+    suspend fun loginStatus(@Query("cookie") cookie: String): LoginStatusResp
+
+    // ========== 网易云用户歌单 ==========
+    @GET("api/user/playlist")
+    suspend fun userPlaylist(
+        @Query("uid") uid: Long,
+        @Query("cookie") cookie: String,
+        @Query("limit") limit: Int = 30,
+        @Query("offset") offset: Int = 0
+    ): NcPlaylistResp
+
+    // ========== 喜欢音乐列表（红心歌曲 ID）==========
+    @GET("api/likelist")
+    suspend fun likeList(
+        @Query("uid") uid: Long,
+        @Query("cookie") cookie: String
+    ): LikeListResp
+
+    // ========== 用户播放记录 ==========
+    @GET("api/user/record")
+    suspend fun userRecord(
+        @Query("uid") uid: Long,
+        @Query("cookie") cookie: String,
+        @Query("type") type: Int = 1  // 1=周 0=所有
+    ): UserRecordResp
 }

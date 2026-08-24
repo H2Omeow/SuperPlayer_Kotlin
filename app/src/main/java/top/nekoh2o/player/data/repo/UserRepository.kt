@@ -4,6 +4,9 @@ import top.nekoh2o.player.data.model.Playlist
 import top.nekoh2o.player.data.model.Song
 import top.nekoh2o.player.data.model.User
 import top.nekoh2o.player.data.model.UserData
+import top.nekoh2o.player.data.model.NcAccountResp
+import top.nekoh2o.player.data.model.NcPlaylistItem
+import top.nekoh2o.player.data.model.NcRecordItem
 import top.nekoh2o.player.data.net.ApiFactory
 
 class UserRepository {
@@ -55,4 +58,56 @@ class UserRepository {
             } else fallback
         }.getOrDefault(fallback)
     }
+
+    // ==================== 网易云相关 ====================
+
+    private val ncApi = ApiFactory.netease
+
+    /**
+     * 检测网易云登录状态
+     * @return true 表示 Cookie 有效
+     */
+    suspend fun checkNcLoginStatus(): Boolean =
+        runCatching {
+            val resp = ncApi.loginStatus()
+            resp.data?.code == 200
+        }.getOrDefault(false)
+
+    /**
+     * 获取网易云账号信息（含会员状态）
+     */
+    suspend fun fetchNcAccount(): NcAccountResp? =
+        runCatching {
+            ncApi.userAccount()
+        }.getOrNull()
+
+    /**
+     * 获取网易云用户歌单列表
+     */
+    suspend fun fetchNcPlaylists(uid: Long): List<NcPlaylistItem> =
+        runCatching {
+            val resp = ncApi.userPlaylist(uid)
+            if (resp.code == 200) resp.playlist else emptyList()
+        }.getOrDefault(emptyList())
+
+    /**
+     * 获取网易云红心歌曲 ID 列表
+     */
+    suspend fun fetchNcLikeList(uid: Long): List<Long> =
+        runCatching {
+            val resp = ncApi.likeList(uid)
+            if (resp.code == 200) resp.ids else emptyList()
+        }.getOrDefault(emptyList())
+
+    /**
+     * 获取网易云播放记录
+     * @param type 1=最近一周 0=所有时间
+     */
+    suspend fun fetchNcRecord(uid: Long, type: Int = 1): List<top.nekoh2o.player.data.model.NcRecordItem> =
+        runCatching {
+            val resp = ncApi.userRecord(uid, type)
+            if (resp.code == 200) {
+                if (type == 1) resp.weekData else resp.allData
+            } else emptyList()
+        }.getOrDefault(emptyList())
 }

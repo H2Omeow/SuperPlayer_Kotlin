@@ -88,15 +88,28 @@ data class UiState(
     val downloadTasks: List<DownloadTask> = emptyList(),
     val downloadedSongs: List<DownloadedSong> = emptyList(),
     // 网易云 Cookie（用于设置页展示/编辑）
-    val ncCookie: String = ""
+    val ncCookie: String = "",
+    // 网易云账号信息
+    val ncAccount: NcAccountState = NcAccountState()
 ) {
     val current: Song? get() = queue.getOrNull(currentIndex)
 }
+
+// 网易云账号信息 UI 状态
+data class NcAccountState(
+    val userId: Long = 0,
+    val nickname: String = "",
+    val avatarUrl: String? = null,
+    val vipType: Int = 0,  // 0=非会员 11=VIP
+    val vipExpireTime: Long = 0,  // 会员到期时间戳（毫秒）
+    val isValid: Boolean = false  // Cookie 是否有效
+)
 
 class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = MusicRepository()
     private val userRepo = UserRepository()
+    private val ncRepo = top.nekoh2o.player.data.repo.NeteaseRepository()
     private val local = (app as PlayerApp).localStore
     private val settingsStore = SettingsStore(app)
 
@@ -151,6 +164,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             ApiFactory.awaitReady()
             _ui.value = _ui.value.copy(quality = CookieStore.level)
             refreshLoginInternal()
+            // 检测网易云 Cookie 有效性
+            checkNcCookieValidity()
         }
         refreshWallpaper()
 
@@ -566,6 +581,38 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(quality = level)
         toast("音质已切换")
     }
+
+    /**
+     * 根据网易云会员等级返回可用的音质选项
+     */
+    fun getAvailableQualities(vipType: Int): List<Pair<String, String>> {
+        return when {
+            vipType >= 11 -> listOf(  // SVIP
+                "standard" to "标准",
+                "higher" to "较高",
+                "exhigh" to "极高",
+                "lossless" to "无损 SQ",
+                "hires" to "Hi-Res",
+                "jyeffect" to "高清臻音",
+                "sky" to "沉浸环绕声",
+                "jymaster" to "超清母带",
+                "dolby" to "臻音全景声"
+            )
+            vipType >= 1 -> listOf(  // VIP
+                "standard" to "标准",
+                "higher" to "较高",
+                "exhigh" to "极高",
+                "lossless" to "无损 SQ",
+                "hires" to "Hi-Res",
+                "jyeffect" to "高清臻音"
+            )
+            else -> listOf(  // 普通用户
+                "standard" to "标准",
+                "higher" to "较高",
+                "exhigh" to "极高"
+            )
+        }
+    }
     fun refreshWallpaper() {
         viewModelScope.launch {
             val url = userRepo.randomWallpaper()
@@ -782,6 +829,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 android.util.Log.d("PlayerViewModel", "refreshLoginInternal() - success: $u")
                 _ui.value = _ui.value.copy(user = u, loggedIn = true)
                 pullFromCloud()
+                // 登录成功后检测网易云 Cookie 有效性
+                checkNcCookieValidity()
                 return
             }
 
@@ -844,6 +893,48 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ==================== 网易云相关 ====================
+
+    /**
+     * 冷启动检测网易云 Cookie 有效性
+     */
+    fun checkNcCookieValidity() {
+        if (!CookieStore.hasNcUserCookie()) return
+        viewModelScope.launch {
+            val valid = userRepo.checkNcLoginStatus()
+            if (!valid) {
+                toast("网易云 Cookie 已失效，请重新登录")
+                // 清除失效的网易云账号信息
+                _ui.value = _ui.value.copy(
+                    ncAccount = NcAccountState(isValid = false)
+                )
+            } else {
+                // Cookie 有效时加载账号信息
+                refreshNcAccount()
+            }
+        }
+    }
+
+    /**
+     * 刷新网易云账号信息（含会员状态）
+     */
+    fun refreshNcAccount() {
+        viewModelScope.launch {
+            val resp = userRepo.fetchNcAccount()
+            if (resp != null && resp.code == 200 && resp.account != null && resp.profile != null) {
+                _ui.value = _ui.value.copy(
+                    ncAccount = NcAccountState(
+                        userId = resp.account.id,
+                        nickname = resp.profile.nickname,
+                        avatarUrl = resp.profile.avatarUrl,
+                        vipType = resp.account.vipType,
+                        vipExpireTime = resp.account.viptypeVersion,
+                        isValid = true
+                    )
+                )
+            }
+        }
+    }
     // ==================== QR 扫码登录（网易云） ====================
     suspend fun qrKeyOnce(): String? = repo.qrKey()
     suspend fun qrCreateOnce(key: String): String? = repo.qrCreate(key)
@@ -854,6 +945,83 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             schedulePush()
         }
         return code
+    }
+
+    // ==================== 网易云相关功能 ====================
+
+    /**
+     * 获取网易云账号信息（含会员状态）
+     */
+    suspend fun fetchNcAccount() = userRepo.fetchNcAccount()
+
+    /**
+     * 获取网易云用户歌单
+     */
+    suspend fun fetchNcPlaylists(uid: Long): List<top.nekoh2o.player.data.model.NcPlaylistItem> {
+        return userRepo.fetchNcPlaylists(uid)
+    }
+
+    /**
+     * 获取红心歌曲列表
+     */
+    suspend fun fetchNcLikeSongs(uid: Long): List<Song> {
+        val ids = userRepo.fetchNcLikeList(uid)
+        return repo.songsByIds(ids)
+    }
+
+    /**
+     * 获取播放记录
+     */
+    suspend fun fetchNcPlayRecord(uid: Long, type: Int = 1): List<top.nekoh2o.player.data.model.NcRecordItem> {
+        return userRepo.fetchNcRecord(uid, type)
+    }
+
+    /**
+     * 同步网易云歌单到本地
+     */
+    fun syncNcPlaylistToLocal(playlist: top.nekoh2o.player.data.model.NcPlaylistItem) {
+        viewModelScope.launch {
+            val songs = repo.playlistTracks(playlist.id)
+            if (songs.isEmpty()) {
+                toast("歌单为空或获取失败")
+                return@launch
+            }
+            // 创建新播放列表并添加歌曲
+            val localPl = local.createPlaylist(playlist.name)
+            songs.forEach { localPl.songs.add(it) }
+            local.savePlaylists()
+            pushMineToState()
+            schedulePush()
+            toast("已同步歌单：${playlist.name}（${songs.size}首）")
+        }
+    }
+
+    /**
+     * 同步红心歌曲到本地收藏
+     */
+    fun syncNcLikeSongsToLocal(songs: List<Song>) {
+        viewModelScope.launch {
+            songs.forEach { song ->
+                if (!local.isFav(song.id)) {
+                    local.toggleFav(song)
+                }
+            }
+            pushMineToState()
+            schedulePush()
+            toast("已同步 ${songs.size} 首红心歌曲到收藏")
+        }
+    }
+
+    /**
+     * 同步播放记录到本地历史
+     */
+    fun syncNcRecordToLocal(songs: List<Song>) {
+        viewModelScope.launch {
+            songs.forEach { local.addHistory(it) }
+            pushMineToState()
+            schedulePush()
+            toast("已同步 ${songs.size} 首播放记录到历史")
+        }
     }
 
     // ==================== 提示 ====================

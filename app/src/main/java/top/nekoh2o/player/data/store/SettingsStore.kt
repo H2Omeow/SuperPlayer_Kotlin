@@ -24,7 +24,8 @@ class SettingsStore(context: Context) {
         floatingLyricEnabled = prefs.getBoolean(KEY_FLOAT_LYRIC, false),
         floatingLyricDoubleRow = prefs.getBoolean(KEY_FLOAT_DOUBLE_ROW, false),
         floatingLyricShowTranslation = prefs.getBoolean(KEY_FLOAT_TRANSLATION, true),
-        downloadDirUri = prefs.getString(KEY_DOWNLOAD_DIR, "") ?: ""
+        downloadDirUri = prefs.getString(KEY_DOWNLOAD_DIR, "") ?: "",
+        audioQuality = prefs.getString(KEY_AUDIO_QUALITY, "exhigh") ?: "exhigh"
     )
 
     fun save(s: AppSettings) {
@@ -42,6 +43,7 @@ class SettingsStore(context: Context) {
             .putBoolean(KEY_FLOAT_DOUBLE_ROW, s.floatingLyricDoubleRow)
             .putBoolean(KEY_FLOAT_TRANSLATION, s.floatingLyricShowTranslation)
             .putString(KEY_DOWNLOAD_DIR, s.downloadDirUri)
+            .putString(KEY_AUDIO_QUALITY, s.audioQuality)
             .apply()
     }
 
@@ -59,5 +61,6 @@ class SettingsStore(context: Context) {
         private const val KEY_FLOAT_DOUBLE_ROW = "floating_double_row"
         private const val KEY_FLOAT_TRANSLATION = "floating_translation"
         private const val KEY_DOWNLOAD_DIR = "download_dir_uri"
+        private const val KEY_AUDIO_QUALITY = "audio_quality"
     }
 }

@@ -33,10 +33,15 @@ fun MineScreen(vm: PlayerViewModel, onStartSsoLogin: () -> Unit) {
     var addTarget by remember { mutableStateOf<Song?>(null) }
     var showQrLogin by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showNcScreen by remember { mutableStateOf(false) }
     val titles = listOf("播放记录", "我的收藏", "自定义歌单")
 
     if (showSettings) {
         SettingsScreen(vm) { showSettings = false }
+        return
+    }
+    if (showNcScreen) {
+        NeteaseScreen(vm) { showNcScreen = false }
         return
     }
     if (openedPlaylist in state.playlists.indices) {
@@ -49,7 +54,7 @@ fun MineScreen(vm: PlayerViewModel, onStartSsoLogin: () -> Unit) {
             state = state,
             onLogin = onStartSsoLogin,
             onLogout = { vm.logout() },
-            onQrLogin = { showQrLogin = true },
+            onNetease = { showNcScreen = true },
             onSettings = { showSettings = true }
         )
         TabRow(selectedTabIndex = tab) {
@@ -67,9 +72,6 @@ fun MineScreen(vm: PlayerViewModel, onStartSsoLogin: () -> Unit) {
     addTarget?.let { song ->
         AddToPlaylistDialog(vm, song) { addTarget = null }
     }
-    if (showQrLogin) {
-        QrLoginDialog(vm) { showQrLogin = false }
-    }
 }
 
 @Composable
@@ -77,7 +79,7 @@ private fun UserCard(
     state: top.nekoh2o.player.ui.UiState,
     onLogin: () -> Unit,
     onLogout: () -> Unit,
-    onQrLogin: () -> Unit,
+    onNetease: () -> Unit,
     onSettings: () -> Unit
 ) {
     ElevatedCard(Modifier.fillMaxWidth().padding(12.dp)) {
@@ -121,7 +123,7 @@ private fun UserCard(
                 } else {
                     TextButton(onClick = onLogin, colors = NekoDefaults.textButtonColors()) { Text("登录") }
                 }
-                TextButton(onClick = onQrLogin, colors = NekoDefaults.textButtonColors()) { Text("网易云") }
+                TextButton(onClick = onNetease, colors = NekoDefaults.textButtonColors()) { Text("网易云") }
             }
         }
     }
