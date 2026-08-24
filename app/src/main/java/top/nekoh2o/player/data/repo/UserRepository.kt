@@ -13,7 +13,13 @@ class UserRepository {
     suspend fun fetchMe(): User? =
         runCatching {
             val resp = api.me()
-            if (resp.code == 0) resp.user else null
+            android.util.Log.d("UserRepository", "fetchMe() - response code: ${resp.code}, user: ${resp.user}")
+            if (resp.code == 0) resp.user else {
+                android.util.Log.w("UserRepository", "fetchMe() - non-zero code: ${resp.code}")
+                null
+            }
+        }.onFailure { e ->
+            android.util.Log.e("UserRepository", "fetchMe() - network/parse error: ${e.message}", e)
         }.getOrNull()
 
     suspend fun pull(): UserData? =
