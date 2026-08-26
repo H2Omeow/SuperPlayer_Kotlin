@@ -9,6 +9,7 @@ import top.nekoh2o.player.data.cache.MusicCache
 import top.nekoh2o.player.data.net.ApiFactory
 import top.nekoh2o.player.data.net.CookieStore
 import top.nekoh2o.player.data.repo.DownloadIndex
+import top.nekoh2o.player.data.repo.KugouRepository
 import top.nekoh2o.player.data.repo.LocalStore
 import top.nekoh2o.player.data.repo.MusicRepository
 
@@ -33,8 +34,17 @@ class PlayerApp : Application() {
             // CookieStore 加载完成后再初始化 ApiFactory，确保拦截器能读到已保存的 token
             ApiFactory.init(this@PlayerApp)
 
+            // 确保网易云有游客 Cookie
             if (!CookieStore.hasAnyCookie()) {
                 MusicRepository().ensureGuestCookie()
+            }
+
+            // 确保酷狗有 dfid
+            if (CookieStore.kgDfidValue().isEmpty()) {
+                val dfid = KugouRepository().getDfid()
+                if (dfid != null) {
+                    CookieStore.setKgDfid(dfid)
+                }
             }
         }
     }

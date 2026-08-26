@@ -19,7 +19,8 @@ class KugouRepository {
     suspend fun sendCode(phone: String): Boolean =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.sendCode(phone, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.sendCode(phone, platform, cookie)
             resp.status == 1
         }.getOrDefault(false)
 
@@ -29,10 +30,15 @@ class KugouRepository {
     suspend fun login(phone: String, code: String): KgLoginData? =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.login(phone, code, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.login(phone, code, platform, cookie)
             if (resp.status == 1 && resp.data != null) {
-                // 保存token
+                // 保存token、userid、dfid
                 CookieStore.setKgToken(resp.data.token)
+                CookieStore.setKgUserid(resp.data.userid.toString())
+                if (resp.data.dfid.isNotEmpty()) {
+                    CookieStore.setKgDfid(resp.data.dfid)
+                }
                 resp.data
             } else null
         }.onFailure { e ->
@@ -47,7 +53,8 @@ class KugouRepository {
             val token = CookieStore.kgTokenValue()
             if (token.isEmpty()) return@runCatching false
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.refreshLogin(token, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.refreshLogin(token, platform, cookie)
             if (resp.status == 1 && resp.data != null) {
                 CookieStore.setKgToken(resp.data.token)
                 true
@@ -60,7 +67,11 @@ class KugouRepository {
     suspend fun getDfid(): String? =
         runCatching {
             val resp = api.getDfid()
-            resp.data?.dfid
+            if (resp.status == 1 && resp.data?.dfid?.isNotEmpty() == true) {
+                // 保存dfid到CookieStore
+                CookieStore.setKgDfid(resp.data.dfid)
+                resp.data.dfid
+            } else null
         }.getOrNull()
 
     // ==================== 用户信息 ====================
@@ -73,7 +84,8 @@ class KugouRepository {
             val token = CookieStore.kgTokenValue()
             if (token.isEmpty()) return@runCatching null
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getUserInfo(token, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getUserInfo(token, platform, cookie)
             if (resp.status == 1) resp.data else null
         }.onFailure { e ->
             android.util.Log.e("KugouRepository", "getUserInfo() failed: ${e.message}", e)
@@ -87,7 +99,8 @@ class KugouRepository {
             val token = CookieStore.kgTokenValue()
             if (token.isEmpty()) return@runCatching null
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getVipInfo(token, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getVipInfo(token, platform, cookie)
             if (resp.status == 1) resp.data else null
         }.getOrNull()
 
@@ -101,7 +114,8 @@ class KugouRepository {
             val token = CookieStore.kgTokenValue()
             if (token.isEmpty()) return@runCatching emptyList()
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getUserPlaylist(token, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getUserPlaylist(token, platform, cookie)
             if (resp.status == 1) resp.data?.info ?: emptyList() else emptyList()
         }.onFailure { e ->
             android.util.Log.e("KugouRepository", "getUserPlaylists() failed: ${e.message}", e)
@@ -113,7 +127,8 @@ class KugouRepository {
     suspend fun getPlaylistDetail(specialId: Long): List<Song> =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getPlaylistDetail(specialId, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getPlaylistDetail(specialId, platform, cookie)
             if (resp.status == 1) {
                 resp.data?.list?.list?.info?.map { it.toSong() } ?: emptyList()
             } else emptyList()
@@ -129,7 +144,8 @@ class KugouRepository {
     suspend fun search(keyword: String, page: Int = 1): List<Song> =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.search(keyword, page, 30, "song", platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.search(keyword, page, 30, "song", platform, cookie)
             if (resp.status == 1) {
                 resp.data?.lists?.map { it.toSong() } ?: emptyList()
             } else emptyList()
@@ -143,7 +159,8 @@ class KugouRepository {
     suspend fun searchSuggest(keyword: String): List<String> =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.searchSuggest(keyword, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.searchSuggest(keyword, platform, cookie)
             if (resp.status == 1) {
                 resp.data?.song?.map { it.songname } ?: emptyList()
             } else emptyList()
@@ -157,7 +174,8 @@ class KugouRepository {
     suspend fun getSongUrl(hash: String, quality: String = "320"): String? =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getSongUrl(hash, quality, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getSongUrl(hash, quality, platform, cookie)
             if (resp.status == 1) {
                 resp.data?.play_url?.ifEmpty { resp.data.play_backup_url }
             } else null
@@ -171,7 +189,8 @@ class KugouRepository {
     suspend fun getSongQualities(hash: String): List<KgQualityItem> =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getSongUrlNew(hash, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getSongUrlNew(hash, platform, cookie)
             if (resp.status == 1) {
                 resp.data?.qualities ?: emptyList()
             } else emptyList()
@@ -185,7 +204,8 @@ class KugouRepository {
     suspend fun getLyric(hash: String): String? =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getLyric(hash, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getLyric(hash, platform, cookie)
             if (resp.status == 1) resp.data?.lyrics else null
         }.getOrNull()
 
@@ -195,7 +215,8 @@ class KugouRepository {
     suspend fun getSongDetail(hash: String): KgSongDetail? =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getSongDetail(hash, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getSongDetail(hash, platform, cookie)
             if (resp.status == 1) resp.data else null
         }.getOrNull()
 
@@ -208,7 +229,8 @@ class KugouRepository {
         runCatching {
             val token = CookieStore.kgTokenValue()
             if (token.isEmpty()) return@runCatching null
-            val resp = api.receiveVip(token, vipType, days, 1)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.receiveVip(token, vipType, days, 1, cookie)
             if (resp.status == 1) resp.data?.result else resp.error_msg
         }.onFailure { e ->
             android.util.Log.e("KugouRepository", "receiveVip() failed: ${e.message}", e)
@@ -224,7 +246,8 @@ class KugouRepository {
             val token = CookieStore.kgTokenValue()
             if (token.isEmpty()) return@runCatching emptyList()
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getFollowArtists(token, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getFollowArtists(token, platform, cookie)
             if (resp.status == 1) resp.data?.info ?: emptyList() else emptyList()
         }.getOrDefault(emptyList())
 
@@ -234,7 +257,8 @@ class KugouRepository {
     suspend fun getArtistSongs(singerId: Long): List<Song> =
         runCatching {
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getArtistSongs(singerId, 1, 50, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getArtistSongs(singerId, 1, 50, platform, cookie)
             if (resp.status == 1) {
                 resp.data?.lists?.map { it.toSong() } ?: emptyList()
             } else emptyList()
@@ -250,7 +274,8 @@ class KugouRepository {
             val token = CookieStore.kgTokenValue()
             if (token.isEmpty()) return@runCatching emptyList()
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getUserHistory(token, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getUserHistory(token, platform, cookie)
             if (resp.status == 1) {
                 resp.data?.info?.map { it.toSong() } ?: emptyList()
             } else emptyList()
@@ -264,7 +289,8 @@ class KugouRepository {
             val token = CookieStore.kgTokenValue()
             if (token.isEmpty()) return@runCatching emptyList()
             val platform = CookieStore.kgPlatformValue()
-            val resp = api.getRecommendSongs(token, platform)
+            val cookie = CookieStore.kgCookieValue()
+            val resp = api.getRecommendSongs(token, platform, cookie)
             if (resp.status == 1) {
                 resp.data?.lists?.map { it.toSong() } ?: emptyList()
             } else emptyList()

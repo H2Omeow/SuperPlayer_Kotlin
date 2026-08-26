@@ -334,6 +334,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             CookieStore.setKgPlatform(platform)
             val data = kgRepo.login(phone, code)
             if (data != null) {
+                // 保存登录返回的 userid 和 dfid
+                CookieStore.setKgUserid(data.userid.toString())
+                CookieStore.setKgDfid(data.dfid)
                 toast("登录成功")
                 refreshKgAccount()
             } else {
@@ -349,6 +352,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             CookieStore.setKgPlatform(platform)
             CookieStore.setKgToken(token)
+            // MID就是userid
+            CookieStore.setKgUserid(mid)
+            // 获取dfid
+            val dfid = kgRepo.getDfid()
+            if (dfid != null) {
+                CookieStore.setKgDfid(dfid)
+            }
             toast("登录成功")
             refreshKgAccount()
         }

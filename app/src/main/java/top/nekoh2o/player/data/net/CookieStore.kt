@@ -29,6 +29,8 @@ object CookieStore {
     private val KEY_APP_TOKEN = stringPreferencesKey("app_token")
     private val KEY_KG_TOKEN = stringPreferencesKey("kg_token")
     private val KEY_KG_PLATFORM = stringPreferencesKey("kg_platform")
+    private val KEY_KG_USERID = stringPreferencesKey("kg_userid")
+    private val KEY_KG_DFID = stringPreferencesKey("kg_dfid")
 
     private lateinit var appContext: Context
     @Volatile private var userCookie: String = ""
@@ -36,6 +38,8 @@ object CookieStore {
     @Volatile private var appToken: String = ""
     @Volatile private var kgToken: String = ""
     @Volatile private var kgPlatform: String = "0"  // 0=原版，1=概念版
+    @Volatile private var kgUserid: String = ""
+    @Volatile private var kgDfid: String = ""
     @Volatile var level: String = "exhigh"
         private set
     private val ready = CompletableDeferred<Unit>()
@@ -52,6 +56,8 @@ object CookieStore {
             appToken = prefs[KEY_APP_TOKEN] ?: ""
             kgToken = prefs[KEY_KG_TOKEN] ?: ""
             kgPlatform = prefs[KEY_KG_PLATFORM] ?: "0"
+            kgUserid = prefs[KEY_KG_USERID] ?: ""
+            kgDfid = prefs[KEY_KG_DFID] ?: ""
             level = prefs[KEY_LEVEL] ?: "exhigh"
 
             android.util.Log.d("CookieStore", "init() - appToken loaded: ${appToken.take(20)}... (len=${appToken.length})")
@@ -129,5 +135,30 @@ object CookieStore {
     suspend fun setKgPlatform(platform: Int) {
         kgPlatform = platform.toString()
         appContext.dataStore.edit { it[KEY_KG_PLATFORM] = kgPlatform }
+    }
+
+    // 酷狗 userid
+    fun kgUseridValue(): String = kgUserid
+
+    suspend fun setKgUserid(userid: String) {
+        kgUserid = userid
+        appContext.dataStore.edit { it[KEY_KG_USERID] = userid }
+    }
+
+    // 酷狗 dfid
+    fun kgDfidValue(): String = kgDfid
+
+    suspend fun setKgDfid(dfid: String) {
+        kgDfid = dfid
+        appContext.dataStore.edit { it[KEY_KG_DFID] = dfid }
+    }
+
+    // 构建酷狗 cookie 字符串: token=xxx;userid=xxx;dfid=xxx
+    fun kgCookieValue(): String {
+        val parts = mutableListOf<String>()
+        if (kgToken.isNotEmpty()) parts.add("token=$kgToken")
+        if (kgUserid.isNotEmpty()) parts.add("userid=$kgUserid")
+        if (kgDfid.isNotEmpty()) parts.add("dfid=$kgDfid")
+        return parts.joinToString(";")
     }
 }
