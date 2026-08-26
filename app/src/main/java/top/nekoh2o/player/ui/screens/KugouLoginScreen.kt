@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import top.nekoh2o.player.ui.PlayerViewModel
 import top.nekoh2o.player.ui.theme.NekoDefaults
 
@@ -21,18 +22,52 @@ import top.nekoh2o.player.ui.theme.NekoDefaults
 @Composable
 fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
     val state by vm.ui.collectAsState()
+    val scope = rememberCoroutineScope()
     var phone by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var mid by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
+    var openid by remember { mutableStateOf("") }
+    var accessToken by remember { mutableStateOf("") }
     var platform by remember { mutableIntStateOf(state.kgAccount.platform) }
-    var loginMethod by remember { mutableIntStateOf(0) } // 0=验证码 1=MID+Token
+    var loginMethod by remember { mutableIntStateOf(0) } // 0=验证码 1=MID+Token 2=QQ授权 3=QQ扫码
     var countdown by remember { mutableIntStateOf(0) }
+    var qrData by remember { mutableStateOf<top.nekoh2o.player.data.model.KgQQQRCreateData?>(null) }
+    var qrChecking by remember { mutableStateOf(false) }
 
     LaunchedEffect(countdown) {
         if (countdown > 0) {
             kotlinx.coroutines.delay(1000)
             countdown--
+        }
+    }
+
+    // QQ 扫码轮询检查
+    LaunchedEffect(qrData, qrChecking) {
+        if (qrData != null && qrChecking) {
+            while (qrChecking) {
+                kotlinx.coroutines.delay(2000)
+                val result = vm.kgCheckQQLoginQR(qrData!!)
+                if (result != null) {
+                    when (result.status) {
+                        1 -> {
+                            // 登录成功
+                            qrChecking = false
+                            vm.toast("QQ 扫码登录成功")
+                            onBack()
+                        }
+                        2 -> {
+                            // 二维码已过期
+                            qrChecking = false
+                            vm.toast("二维码已过期，请重新获取")
+                            qrData = null
+                        }
+                        else -> {
+                            // 继续等待扫描
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -98,13 +133,30 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 FilterChip(
                     selected = loginMethod == 0,
                     onClick = { loginMethod = 0 },
-                    label = { Text("验证码登录") },
+                    label = { Text("验证码") },
                     modifier = Modifier.weight(1f)
                 )
                 FilterChip(
                     selected = loginMethod == 1,
                     onClick = { loginMethod = 1 },
                     label = { Text("MID+Token") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = loginMethod == 2,
+                    onClick = { loginMethod = 2 },
+                    label = { Text("QQ授权") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChip(
+                    selected = loginMethod == 3,
+                    onClick = { loginMethod = 3 },
+                    label = { Text("QQ扫码") },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -219,6 +271,134 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                2 -> {
+                    // QQ授权登录
+                    Text(
+                        "QQ授权登录",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+
+                    OutlinedTextField(
+                        value = openid,
+                        onValueChange = { openid = it },
+                        label = { Text("OpenID") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = NekoDefaults.textFieldColors()
+                    )
+
+                    OutlinedTextField(
+                        value = accessToken,
+                        onValueChange = { accessToken = it },
+                        label = { Text("Access Token") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 5,
+                        colors = NekoDefaults.textFieldColors()
+                    )
+
+                    Button(
+                        onClick = {
+                            if (openid.isEmpty() || accessToken.isEmpty()) {
+                                vm.toast("请填写完整信息")
+                            } else {
+                                vm.kgLoginWithQQ(openid, accessToken)
+                                onBack()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = openid.isNotEmpty() && accessToken.isNotEmpty()
+                    ) {
+                        Text("登录")
+                    }
+
+                    Text(
+                        "如何获取QQ授权信息？\n通过QQ互联开放平台授权后获取OpenID和Access Token",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                3 -> {
+                    // QQ扫码登录
+                    Text(
+                        "QQ扫码登录",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+
+                    if (qrData == null) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val result = vm.kgCreateQQLoginQR()
+                                    if (result != null) {
+                                        qrData = result
+                                        qrChecking = true
+                                    } else {
+                                        vm.toast("获取二维码失败")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("获取二维码")
+                        }
+                    } else {
+                        Card(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // 这里应该显示二维码图片
+                                // 简化处理：显示二维码URL
+                                Text(
+                                    "请使用QQ扫描二维码",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    "二维码地址: ${qrData!!.qrUrl}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (qrChecking) {
+                                    CircularProgressIndicator(Modifier.size(24.dp))
+                                    Text("等待扫码...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    qrData = null
+                                    qrChecking = false
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("重新获取")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    qrChecking = !qrChecking
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(if (qrChecking) "停止检测" else "开始检测")
+                            }
+                        }
+                    }
+
+                    Text(
+                        "使用手机QQ扫描二维码完成登录",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -230,6 +410,8 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             Text(
                 "• 验证码登录：使用手机号和验证码登录\n" +
                 "• MID+Token登录：适合从其他设备获取凭证后直接登录\n" +
+                "• QQ授权登录：通过QQ互联获取OpenID和Access Token\n" +
+                "• QQ扫码登录：使用手机QQ扫码完成登录\n" +
                 "• 登录凭证会保存在本地并云端同步\n" +
                 "• 概念版支持领取VIP功能（测试接口）\n" +
                 "• 原版和概念版token不通用，需分别登录",

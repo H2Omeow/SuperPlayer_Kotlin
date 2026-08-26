@@ -55,9 +55,53 @@ interface KugouApi {
 
     /**
      * 获取 DFID（设备指纹）
+     * 注意：很多接口需要先调用此接口获取 dfid
      */
-    @GET("kgapi/dfid")
+    @GET("kgapi/register/dev")
     suspend fun getDfid(): KgDfidResp
+
+    /**
+     * QQ 授权登录
+     * @param openid QQ 授权返回的 openid
+     * @param accessToken QQ 授权返回的 access_token
+     * @param platform 平台类型：0=原版，1=概念版
+     */
+    @GET("kgapi/login/qq")
+    suspend fun loginWithQQ(
+        @Query("openid") openid: String,
+        @Query("access_token") accessToken: String,
+        @Query("platform") platform: Int = 0
+    ): KgLoginResp
+
+    /**
+     * QQ 扫码登录 - 生成二维码
+     * @param platform 平台类型：0=原版，1=概念版
+     */
+    @GET("kgapi/login/qq/qr/create")
+    suspend fun createQQLoginQR(
+        @Query("platform") platform: Int = 0
+    ): KgQQQRCreateResp
+
+    /**
+     * QQ 扫码登录 - 检测扫码状态
+     * @param qrsig 二维码会话标识
+     * @param ptqrtoken qrsig 的 hash33 值
+     * @param ptLoginSig QQ 登录签名
+     * @param ptOpenloginData xlogin 完整参数
+     * @param xloginUrl xlogin 接口完整链接
+     * @param cookie 会话 Cookie
+     * @param platform 平台类型：0=原版，1=概念版
+     */
+    @GET("kgapi/login/qq/qr/check")
+    suspend fun checkQQLoginQR(
+        @Query("qrsig") qrsig: String,
+        @Query("ptqrtoken") ptqrtoken: String,
+        @Query("pt_login_sig") ptLoginSig: String,
+        @Query("pt_openlogin_data") ptOpenloginData: String,
+        @Query("xlogin_url") xloginUrl: String,
+        @Query("cookie") cookie: String,
+        @Query("platform") platform: Int = 0
+    ): KgQQQRCheckResp
 
     // ==================== 用户信息 ====================
 
@@ -137,7 +181,7 @@ interface KugouApi {
      * @param pagesize 每页数量
      * @param type 搜索类型：song=单曲，special=歌单，lyric=歌词，album=专辑，author=歌手，mv=mv
      * @param platform 平台类型：0=原版，1=概念版
-     * @param cookie 酷狗 cookie 字符串（格式：token=xxx;userid=xxx;dfid=xxx）
+     * @param cookie 酷狗 cookie 字符串（格式：token=xxx;userid=xxx;dfid=xxx）【必需，否则返回 error_code: 152】
      */
     @GET("kgapi/search")
     suspend fun search(
@@ -146,20 +190,20 @@ interface KugouApi {
         @Query("pagesize") pagesize: Int = 30,
         @Query("type") type: String = "song",
         @Query("platform") platform: Int = 0,
-        @Query("cookie") cookie: String = ""
+        @Query("cookie") cookie: String
     ): KgSearchResp
 
     /**
      * 搜索建议
      * @param keyword 搜索关键词
      * @param platform 平台类型：0=原版，1=概念版
-     * @param cookie 酷狗 cookie 字符串（格式：token=xxx;userid=xxx;dfid=xxx）
+     * @param cookie 酷狗 cookie 字符串（格式：token=xxx;userid=xxx;dfid=xxx）【必需】
      */
     @GET("kgapi/search/suggest")
     suspend fun searchSuggest(
         @Query("keywords") keyword: String,
         @Query("platform") platform: Int = 0,
-        @Query("cookie") cookie: String = ""
+        @Query("cookie") cookie: String
     ): KgSuggestResp
 
     /**
@@ -307,14 +351,41 @@ interface KugouApi {
 
     /**
      * 获取推荐歌曲（私人FM）
-     * @param token 用户token
+     * 说明：私人 FM，对应手机和 PC 端的"猜你喜欢"
+     * @param cookie 完整 cookie 字符串（格式：token=xxx;userid=xxx;dfid=xxx）
      * @param platform 平台类型：0=原版，1=概念版
-     * @param cookie 酷狗 cookie 字符串（格式：token=xxx;userid=xxx;dfid=xxx）
      */
-    @GET("kgapi/recommend/songs")
+    @GET("kgapi/personal/fm")
     suspend fun getRecommendSongs(
-        @Query("token") token: String,
-        @Query("platform") platform: Int = 0,
-        @Query("cookie") cookie: String = ""
+        @Query("cookie") cookie: String,
+        @Query("platform") platform: Int = 0
     ): KgSearchResp
+
+    // ==================== QQ登录 ====================
+
+    /**
+     * QQ授权登录
+     * @param openid QQ OpenID
+     * @param accessToken QQ Access Token
+     */
+    @GET("kgapi/login/qq")
+    suspend fun loginWithQQ(
+        @Query("openid") openid: String,
+        @Query("access_token") accessToken: String
+    ): KgQQLoginResp
+
+    /**
+     * QQ扫码登录 - 创建二维码
+     */
+    @GET("kgapi/login/qq/qr/create")
+    suspend fun createQQLoginQR(): KgQQQRCreateResp
+
+    /**
+     * QQ扫码登录 - 检查状态
+     * @param qrId 二维码ID
+     */
+    @GET("kgapi/login/qq/qr/check")
+    suspend fun checkQQLoginQR(
+        @Query("qr_id") qrId: String
+    ): KgQQQRCheckResp
 }

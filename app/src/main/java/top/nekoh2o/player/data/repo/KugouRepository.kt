@@ -11,6 +11,17 @@ class KugouRepository {
 
     private val api = ApiFactory.kugou
 
+    /**
+     * 初始化：确保 dfid 存在
+     * 应在应用启动或首次使用酷狗功能时调用
+     */
+    suspend fun ensureInitialized() {
+        // 如果已有 dfid，跳过
+        if (CookieStore.kgDfidValue().isNotEmpty()) return
+        // 获取并保存 dfid
+        getDfid()
+    }
+
     // ==================== 登录相关 ====================
 
     /**
@@ -62,7 +73,7 @@ class KugouRepository {
         }.getOrDefault(false)
 
     /**
-     * 获取DFID
+     * 获取DFID（设备指纹）
      */
     suspend fun getDfid(): String? =
         runCatching {
@@ -286,15 +297,63 @@ class KugouRepository {
      */
     suspend fun getRecommendSongs(): List<Song> =
         runCatching {
-            val token = CookieStore.kgTokenValue()
-            if (token.isEmpty()) return@runCatching emptyList()
-            val platform = CookieStore.kgPlatformValue()
             val cookie = CookieStore.kgCookieValue()
-            val resp = api.getRecommendSongs(token, platform, cookie)
+            if (cookie.isEmpty()) return@runCatching emptyList()
+            val platform = CookieStore.kgPlatformValue()
+            val resp = api.getRecommendSongs(cookie, platform)
             if (resp.status == 1) {
                 resp.data?.lists?.map { it.toSong() } ?: emptyList()
             } else emptyList()
         }.getOrDefault(emptyList())
+
+    // ==================== QQ登录 ====================
+
+    /**
+     * QQ授权登录
+     */
+    suspend fun loginWithQQ(openid: String, accessToken: String): KgLoginData? =
+        runCatching {
+            val resp = api.loginWithQQ(openid, accessToken)
+            if (resp.status == 1 && resp.data != null) {
+                CookieStore.setKgToken(resp.data.token)
+                CookieStore.setKgUserid(resp.data.userid.toString())
+                if (resp.data.dfid.isNotEmpty()) {
+                    CookieStore.setKgDfid(resp.data.dfid)
+                }
+                resp.data
+            } else null
+        }.onFailure { e ->
+            android.util.Log.e("KugouRepository", "loginWithQQ() failed: ${e.message}", e)
+        }.getOrNull()
+
+    /**
+     * 创建QQ扫码登录二维码
+     */
+    suspend fun createQQLoginQR(): KgQQQRCreateData? =
+        runCatching {
+            val resp = api.createQQLoginQR()
+            if (resp.status == 1) resp.data else null
+        }.onFailure { e ->
+            android.util.Log.e("KugouRepository", "createQQLoginQR() failed: ${e.message}", e)
+        }.getOrNull()
+
+    /**
+     * 检查QQ扫码登录状态
+     */
+    suspend fun checkQQLoginQR(qrId: String): KgQQQRCheckResp? =
+        runCatching {
+            val resp = api.checkQQLoginQR(qrId)
+            if (resp.status == 1 && resp.data != null) {
+                CookieStore.setKgToken(resp.data.token)
+                CookieStore.setKgUserid(resp.data.userid.toString())
+                if (resp.data.dfid.isNotEmpty()) {
+                    CookieStore.setKgDfid(resp.data.dfid)
+                }
+            }
+            resp
+        }.onFailure { e ->
+            android.util.Log.e("KugouRepository", "checkQQLoginQR() failed: ${e.message}", e)
+        }.getOrNull()
 
     // ==================== 辅助转换方法 ====================
 

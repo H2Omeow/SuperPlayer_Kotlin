@@ -348,3 +348,42 @@ data class KgHistoryItem(
     @SerialName("song_name") val songName: String = "",
     @SerialName("author_name") val authorName: String = ""
 )
+
+// ==================== QQ登录相关 ====================
+
+/**
+ * QQ 授权登录响应
+ */
+@Serializable
+data class KgQQLoginResp(
+    val status: Int = 0,
+    val error_msg: String = "",
+    val data: KgLoginData? = null
+)
+
+/**
+ * QQ 扫码登录 - 创建二维码响应
+ */
+@Serializable
+data class KgQQQRCreateResp(
+    val status: Int = 0,
+    val error_msg: String = "",
+    val data: KgQQQRCreateData? = null
+)
+
+@Serializable
+data class KgQQQRCreateData(
+    @SerialName("qr_url") val qrUrl: String = "",
+    @SerialName("qr_id") val qrId: String = ""
+)
+
+/**
+ * QQ 扫码登录 - 检查状态响应
+ */
+@Serializable
+data class KgQQQRCheckResp(
+    val status: Int = 0,  // 0=等待扫码, 1=登录成功, 2=二维码过期
+    val error_msg: String = "",
+    val data: KgLoginData? = null
+)
+

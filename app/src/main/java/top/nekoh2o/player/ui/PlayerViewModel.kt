@@ -179,6 +179,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             CookieStore.awaitReady()
             ApiFactory.awaitReady()
             _ui.value = _ui.value.copy(quality = CookieStore.level)
+            // 初始化酷狗（确保 dfid 存在）
+            kgRepo.ensureInitialized()
             refreshLoginInternal()
             // 检测网易云 Cookie 有效性
             checkNcCookieValidity()
@@ -1236,6 +1238,35 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ==================== 提示 ====================
     fun toast(msg: String) { _ui.value = _ui.value.copy(toast = msg) }
     fun clearToast() { _ui.value = _ui.value.copy(toast = null) }
+
+    // ==================== 酷狗 QQ 登录 ====================
+
+    /**
+     * QQ授权登录
+     */
+    fun kgLoginWithQQ(openid: String, accessToken: String) {
+        viewModelScope.launch {
+            val data = kgRepo.loginWithQQ(openid, accessToken)
+            if (data != null) {
+                toast("QQ登录成功")
+                refreshKgAccount()
+            } else {
+                toast("QQ登录失败")
+            }
+        }
+    }
+
+    /**
+     * 创建QQ扫码登录二维码
+     */
+    suspend fun kgCreateQQLoginQR(): top.nekoh2o.player.data.model.KgQQQRCreateData? =
+        kgRepo.createQQLoginQR()
+
+    /**
+     * 检查QQ扫码登录状态
+     */
+    suspend fun kgCheckQQLoginQR(qrData: top.nekoh2o.player.data.model.KgQQQRCreateData): top.nekoh2o.player.data.model.KgQQQRCheckResp? =
+        kgRepo.checkQQLoginQR(qrData.qrId)
 
     override fun onCleared() {
         stopProgressLoop()
