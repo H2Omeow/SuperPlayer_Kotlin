@@ -3,6 +3,7 @@ package top.nekoh2o.player.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -11,6 +12,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import android.graphics.BitmapFactory
+import android.util.Base64
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import top.nekoh2o.player.ui.PlayerViewModel
@@ -369,12 +374,19 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                                     style = MaterialTheme.typography.titleSmall
                                 )
 
-                                // 显示二维码图片
-                                AsyncImage(
-                                    model = qrData!!.qrUrl,
-                                    contentDescription = "QQ登录二维码",
-                                    modifier = Modifier.size(200.dp)
-                                )
+                                // 显示二维码图片 - 解码 base64
+                                qrData?.let { data ->
+                                    val base64String = data.qrUrl.removePrefix("data:image/png;base64,")
+                                    val imageBytes = Base64.decode(base64String, Base64.DEFAULT)
+                                    val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                                    bitmap?.let {
+                                        Image(
+                                            painter = BitmapPainter(it.asImageBitmap()),
+                                            contentDescription = "QQ登录二维码",
+                                            modifier = Modifier.size(200.dp)
+                                        )
+                                    }
+                                }
 
                                 if (qrChecking) {
                                     CircularProgressIndicator(Modifier.size(24.dp))

@@ -40,13 +40,20 @@ object QQLoginHelper {
     }
 
     /**
-     * 检查是否安装了 QQ
+     * 检查是否安装了 QQ 或 TIM
      */
     fun isQQInstalled(context: Context): Boolean {
         return try {
             val packageManager = context.packageManager
-            packageManager.getPackageInfo("com.tencent.mobileqq", 0)
-            true
+            // 检查 QQ
+            try {
+                packageManager.getPackageInfo("com.tencent.mobileqq", 0)
+                return true
+            } catch (e: Exception) {
+                // QQ 未安装，检查 TIM
+                packageManager.getPackageInfo("com.tencent.tim", 0)
+                return true
+            }
         } catch (e: Exception) {
             false
         }
