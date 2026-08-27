@@ -18,23 +18,23 @@ interface KugouApi {
      * @param platform 平台类型：0=原版，1=概念版
      * @param cookie 酷狗 cookie 字符串（格式：token=xxx;userid=xxx;dfid=xxx）
      */
-    @GET("kgapi/send_code")
+    @GET("kgapi/captcha/sent")
     suspend fun sendCode(
-        @Query("phone") phone: String,
+        @Query("mobile") phone: String,
         @Query("platform") platform: Int = 0,
         @Query("cookie") cookie: String = ""
     ): KgSendCodeResp
 
     /**
      * 手机号登录
-     * @param phone 手机号
+     * @param mobile 手机号
      * @param code 验证码
      * @param platform 平台类型：0=原版，1=概念版
      * @param cookie 酷狗 cookie 字符串（格式：token=xxx;userid=xxx;dfid=xxx）
      */
-    @GET("kgapi/login")
+    @GET("kgapi/login/cellphone")
     suspend fun login(
-        @Query("phone") phone: String,
+        @Query("mobile") mobile: String,
         @Query("code") code: String,
         @Query("platform") platform: Int = 0,
         @Query("cookie") cookie: String = ""
@@ -373,19 +373,4 @@ interface KugouApi {
         @Query("openid") openid: String,
         @Query("access_token") accessToken: String
     ): KgQQLoginResp
-
-    /**
-     * QQ扫码登录 - 创建二维码
-     */
-    @GET("kgapi/login/qq/qr/create")
-    suspend fun createQQLoginQR(): KgQQQRCreateResp
-
-    /**
-     * QQ扫码登录 - 检查状态
-     * @param qrId 二维码ID
-     */
-    @GET("kgapi/login/qq/qr/check")
-    suspend fun checkQQLoginQR(
-        @Query("qr_id") qrId: String
-    ): KgQQQRCheckResp
 }

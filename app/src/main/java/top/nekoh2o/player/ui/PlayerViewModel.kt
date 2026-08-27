@@ -1257,6 +1257,22 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * 拉起手机 QQ 登录
+     */
+    fun launchQQLogin(appId: String = "102058589") {
+        val context = getApplication<Application>()
+        val helper = top.nekoh2o.player.utils.QQLoginHelper
+        if (!helper.isQQInstalled(context)) {
+            toast("手机未安装QQ，请先安装QQ或使用其他登录方式")
+            return
+        }
+        val success = helper.launchQQLogin(context, appId)
+        if (!success) {
+            toast("拉起QQ失败，请使用其他登录方式")
+        }
+    }
+
+    /**
      * 创建QQ扫码登录二维码
      */
     suspend fun kgCreateQQLoginQR(): top.nekoh2o.player.data.model.KgQQQRCreateData? =
@@ -1266,7 +1282,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * 检查QQ扫码登录状态
      */
     suspend fun kgCheckQQLoginQR(qrData: top.nekoh2o.player.data.model.KgQQQRCreateData): top.nekoh2o.player.data.model.KgQQQRCheckResp? =
-        kgRepo.checkQQLoginQR(qrData.qrId)
+        kgRepo.checkQQLoginQR(qrData)
 
     override fun onCleared() {
         stopProgressLoop()

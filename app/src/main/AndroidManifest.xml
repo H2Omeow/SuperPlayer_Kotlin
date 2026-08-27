@@ -45,6 +45,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="nekoplayer" android:host="auth" />
             </intent-filter>
+            <!-- QQ 登录回调深链：QQ授权完成后返回 nekoplayer://qqauth -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nekoplayer" android:host="qqauth" />
+            </intent-filter>
         </activity>
 
         <!-- 后台播放核心：Media3 会话服务 -->

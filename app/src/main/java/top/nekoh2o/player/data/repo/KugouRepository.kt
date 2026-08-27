@@ -293,7 +293,7 @@ class KugouRepository {
         }.getOrDefault(emptyList())
 
     /**
-     * 获取推荐歌曲
+     * 获取推荐歌曲（个人 FM）
      */
     suspend fun getRecommendSongs(): List<Song> =
         runCatching {
@@ -302,8 +302,11 @@ class KugouRepository {
             val platform = CookieStore.kgPlatformValue()
             val resp = api.getRecommendSongs(cookie, platform)
             if (resp.status == 1) {
-                resp.data?.lists?.map { it.toSong() } ?: emptyList()
+                // 个人 FM 返回 song_list 字段，不是 lists
+                resp.data?.songList?.map { it.toSong() } ?: emptyList()
             } else emptyList()
+        }.onFailure { e ->
+            android.util.Log.e("KugouRepository", "getRecommendSongs() failed: ${e.message}", e)
         }.getOrDefault(emptyList())
 
     // ==================== QQ登录 ====================
@@ -332,7 +335,13 @@ class KugouRepository {
     suspend fun createQQLoginQR(): KgQQQRCreateData? =
         runCatching {
             val resp = api.createQQLoginQR()
-            if (resp.status == 1) resp.data else null
+            // 新版 API 直接返回扁平 JSON，需要转换为旧格式供 UI 使用
+            if (resp.qrcode.isNotEmpty()) {
+                // 将 base64 二维码转换为 data URL
+                val qrUrl = "data:image/png;base64,${resp.qrcode}"
+                // 使用 qrsig 作为 qr_id，并保存完整响应用于后续 check
+                KgQQQRCreateData(qrUrl = qrUrl, qrId = resp.qrsig, fullResp = resp)
+            } else null
         }.onFailure { e ->
             android.util.Log.e("KugouRepository", "createQQLoginQR() failed: ${e.message}", e)
         }.getOrNull()
@@ -340,9 +349,19 @@ class KugouRepository {
     /**
      * 检查QQ扫码登录状态
      */
-    suspend fun checkQQLoginQR(qrId: String): KgQQQRCheckResp? =
+    suspend fun checkQQLoginQR(qrData: KgQQQRCreateData): KgQQQRCheckResp? =
         runCatching {
-            val resp = api.checkQQLoginQR(qrId)
+            val fullResp = qrData.fullResp ?: return@runCatching null
+            val platform = CookieStore.kgPlatformValue()
+            val resp = api.checkQQLoginQR(
+                qrsig = fullResp.qrsig,
+                ptqrtoken = fullResp.ptqrtoken.toString(),
+                ptLoginSig = fullResp.ptLoginSig,
+                ptOpenloginData = fullResp.ptOpenloginData,
+                xloginUrl = fullResp.xloginUrl,
+                cookie = fullResp.cookie,
+                platform = platform
+            )
             if (resp.status == 1 && resp.data != null) {
                 CookieStore.setKgToken(resp.data.token)
                 CookieStore.setKgUserid(resp.data.userid.toString())
@@ -386,6 +405,17 @@ class KugouRepository {
         id = this.audioId,
         nm = this.songName,
         ar = this.authorName,
+        pc = null,
+        source = "kugou"
+    )
+
+    /**
+     * 酷狗个人 FM 歌曲转 Song
+     */
+    private fun KgFmSong.toSong(): Song = Song(
+        id = this.songid,
+        nm = this.songname,
+        ar = this.singerinfo.joinToString(", ") { it.name },
         pc = null,
         source = "kugou"
     )

@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
         }
         // 冷启动时若由深链拉起（浏览器登录完成回跳），处理携带的 token
         handleAuthDeepLink(intent)
+        handleQQAuthDeepLink(intent)
         setContent {
             val state by vm.ui.collectAsState()
             // 壁纸开启且已拿到图时才让控件透明，否则白字会落到纯色底上
@@ -85,6 +86,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleAuthDeepLink(intent)
+        handleQQAuthDeepLink(intent)
     }
 
     // 跳转系统浏览器打开账户中心登录，登录完成后账户中心 302 回跳 nekoplayer://auth?token=<JWT>
@@ -109,9 +111,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // 解析 QQ 登录回调深链：nekoplayer://qqauth?openid=xxx&access_token=xxx
+    private fun handleQQAuthDeepLink(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != AUTH_SCHEME || data.host != QQ_AUTH_HOST) return
+        val openid = data.getQueryParameter("openid")
+        val accessToken = data.getQueryParameter("access_token")
+        if (!openid.isNullOrEmpty() && !accessToken.isNullOrEmpty()) {
+            vm.kgLoginWithQQ(openid, accessToken)
+            Toast.makeText(this, "QQ 登录成功", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "QQ 登录失败：参数缺失", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     companion object {
         private const val ACCOUNT_CENTER = "https://account.nekoh2o.top"
         private const val AUTH_SCHEME = "nekoplayer"
         private const val AUTH_HOST = "auth"
+        private const val QQ_AUTH_HOST = "qqauth"
     }
 }

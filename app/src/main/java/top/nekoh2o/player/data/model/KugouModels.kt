@@ -163,7 +163,9 @@ data class KgSearchResp(
 
 @Serializable
 data class KgSearchData(
-    val lists: List<KgSearchSong> = emptyList()
+    val lists: List<KgSearchSong> = emptyList(),
+    // 个人 FM 返回的字段
+    @SerialName("song_list") val songList: List<KgFmSong> = emptyList()
 )
 
 @Serializable
@@ -173,6 +175,23 @@ data class KgSearchSong(
     @SerialName("SingerName") val singerName: String = "",
     @SerialName("AlbumID") val albumId: String = "",
     @SerialName("Audioid") val audioId: Long = 0
+)
+
+/**
+ * 个人 FM 歌曲
+ */
+@Serializable
+data class KgFmSong(
+    val songname: String = "",
+    val songid: Long = 0,
+    val hash: String = "",
+    val singerinfo: List<KgSingerInfo> = emptyList()
+)
+
+@Serializable
+data class KgSingerInfo(
+    val name: String = "",
+    val id: String = ""
 )
 
 /**
@@ -363,18 +382,27 @@ data class KgQQLoginResp(
 
 /**
  * QQ 扫码登录 - 创建二维码响应
+ * 注意：新版 API 直接返回扁平 JSON，不在 data 字段内
  */
 @Serializable
 data class KgQQQRCreateResp(
-    val status: Int = 0,
-    val error_msg: String = "",
-    val data: KgQQQRCreateData? = null
+    val qrcode: String = "",
+    val qrsig: String = "",
+    val ptqrtoken: Long = 0,
+    @SerialName("pt_login_sig") val ptLoginSig: String = "",
+    @SerialName("pt_openlogin_data") val ptOpenloginData: String = "",
+    @SerialName("xlogin_url") val xloginUrl: String = "",
+    val cookie: String = ""
 )
 
-@Serializable
+/**
+ * QQ 扫码登录 - 用于 UI 展示的数据
+ */
 data class KgQQQRCreateData(
-    @SerialName("qr_url") val qrUrl: String = "",
-    @SerialName("qr_id") val qrId: String = ""
+    val qrUrl: String = "",       // 二维码图片 data URL
+    val qrId: String = "",        // 用于轮询的 ID（实际是 qrsig）
+    // 保存完整的响应数据，用于后续 check 调用
+    val fullResp: KgQQQRCreateResp? = null
 )
 
 /**
