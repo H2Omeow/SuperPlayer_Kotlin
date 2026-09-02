@@ -86,7 +86,21 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 items(active, key = { it.song.id }) { task ->
                     ActiveTaskRow(
                         task = task,
-                        onRetry = { vm.retryDownload(task.song, task.quality) }
+                        onRetry = { vm.retryDownload(task.song, task.quality) },
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                            ),
+                            placementSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                            ),
+                            fadeOutSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                            )
+                        )
                     )
                 }
             }
@@ -103,7 +117,21 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                     DownloadedRow(
                         item = d,
                         onPlay = { vm.playNow(d.song) },
-                        onRemove = { showDeleteConfirm = d.songId }
+                        onRemove = { showDeleteConfirm = d.songId },
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                            ),
+                            placementSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                            ),
+                            fadeOutSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                            )
+                        )
                     )
                     HorizontalDivider()
                 }
@@ -113,9 +141,9 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun ActiveTaskRow(task: DownloadTask, onRetry: () -> Unit) {
+private fun ActiveTaskRow(task: DownloadTask, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AsyncImage(
@@ -136,8 +164,16 @@ private fun ActiveTaskRow(task: DownloadTask, onRetry: () -> Unit) {
                 )
                 else -> {
                     Spacer(Modifier.height(4.dp))
+                    val animatedProgress by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = task.progress,
+                        animationSpec = androidx.compose.animation.core.tween(
+                            durationMillis = 300,
+                            easing = androidx.compose.animation.core.FastOutSlowInEasing
+                        ),
+                        label = "download_progress"
+                    )
                     LinearProgressIndicator(
-                        progress = { task.progress },
+                        progress = { animatedProgress },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -162,10 +198,11 @@ private fun ActiveTaskRow(task: DownloadTask, onRetry: () -> Unit) {
 private fun DownloadedRow(
     item: DownloadedSong,
     onPlay: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(

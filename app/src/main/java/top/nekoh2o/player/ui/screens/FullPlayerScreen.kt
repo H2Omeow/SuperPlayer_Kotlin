@@ -1,10 +1,16 @@
 package top.nekoh2o.player.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +28,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
@@ -286,10 +293,32 @@ private fun ControlRow(
             stateDescription = if (isFav) "已收藏" else "未收藏",
             onClick = onFavClick
         ) {
+            var scale by remember { mutableFloatStateOf(1f) }
+            val animatedScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = scale,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                ),
+                label = "favorite_scale"
+            )
+
+            LaunchedEffect(isFav) {
+                if (isFav) {
+                    scale = 1.3f
+                    kotlinx.coroutines.delay(150)
+                    scale = 1f
+                }
+            }
+
             Icon(
                 if (isFav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                 contentDescription = null,
-                tint = if (isFav) MaterialTheme.colorScheme.primary else TextMain
+                tint = if (isFav) MaterialTheme.colorScheme.primary else TextMain,
+                modifier = Modifier.graphicsLayer {
+                    scaleX = animatedScale
+                    scaleY = animatedScale
+                }
             )
         }
         ControlItem(
@@ -615,7 +644,23 @@ private fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
                 items(state.queue, key = { it.id }) { song ->
                     val index = state.queue.indexOf(song)
                     ReorderableItem(reorderState, key = song.id) { isDragging ->
-                        Surface(tonalElevation = if (isDragging) 4.dp else 0.dp) {
+                        Surface(
+                            tonalElevation = if (isDragging) 4.dp else 0.dp,
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = androidx.compose.animation.core.spring(
+                                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                                ),
+                                placementSpec = androidx.compose.animation.core.spring(
+                                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                                ),
+                                fadeOutSpec = androidx.compose.animation.core.spring(
+                                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                                )
+                            )
+                        ) {
                             Row(
                                 Modifier.fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -782,25 +827,57 @@ private fun LandscapePlayerLayout(
                     onClick = { vm.cyclePlayMode() },
                     modifier = Modifier.toggleSemantics("播放模式", modeLabel)
                 ) {
-                    Icon(
-                        when (state.playMode) {
-                            PlayMode.LOOP -> Icons.Filled.Repeat
-                            PlayMode.SINGLE -> Icons.Filled.RepeatOne
-                            PlayMode.RANDOM -> Icons.Filled.Shuffle
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = state.playMode,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(200)) + scaleIn(
+                                initialScale = 0.8f,
+                                animationSpec = tween(200)
+                            )).togetherWith(
+                                fadeOut(animationSpec = tween(200)) + scaleOut(
+                                    targetScale = 0.8f,
+                                    animationSpec = tween(200)
+                                )
+                            )
                         },
-                        contentDescription = null, tint = TextMain
-                    )
+                        label = "play_mode_portrait"
+                    ) { mode ->
+                        Icon(
+                            when (mode) {
+                                PlayMode.LOOP -> Icons.Filled.Repeat
+                                PlayMode.SINGLE -> Icons.Filled.RepeatOne
+                                PlayMode.RANDOM -> Icons.Filled.Shuffle
+                            },
+                            contentDescription = null, tint = TextMain
+                        )
+                    }
                 }
                 IconButton(onClick = { vm.prev() }) {
                     Icon(Icons.Filled.SkipPrevious, contentDescription = "上一首",
                         tint = TextMain, modifier = Modifier.size(36.dp))
                 }
                 FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(64.dp)) {
-                    Icon(
-                        if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (state.isPlaying) "暂停" else "播放",
-                        modifier = Modifier.size(32.dp)
-                    )
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = state.isPlaying,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(150)) + scaleIn(
+                                initialScale = 0.8f,
+                                animationSpec = tween(150)
+                            )).togetherWith(
+                                fadeOut(animationSpec = tween(150)) + scaleOut(
+                                    targetScale = 0.8f,
+                                    animationSpec = tween(150)
+                                )
+                            )
+                        },
+                        label = "play_pause_fullscreen"
+                    ) { playing ->
+                        Icon(
+                            if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (playing) "暂停" else "播放",
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
                 IconButton(onClick = { vm.next() }) {
                     Icon(Icons.Filled.SkipNext, contentDescription = "下一首",
@@ -858,44 +935,50 @@ private fun PortraitPlayerLayout(
                 ) { onToggleLyrics() },
             contentAlignment = Alignment.Center
         ) {
-            if (showLyrics) {
-                // 歌词模式：只显示歌词
-                LyricView(
-                    lyrics = state.lyrics,
-                    activeIndex = state.lyricIndex,
-                    positionSec = state.positionMs / 1000.0,
-                    isPlaying = state.isPlaying,
-                    activeColor = activeColor,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                // 唱片模式：显示唱片和歌曲信息
-                Column(
-                    Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    RotatingCover(
-                        url = cur?.pc?.let { "$it?param=500y500" },
-                        playing = state.isPlaying,
-                        modifier = Modifier
+            androidx.compose.animation.Crossfade(
+                targetState = showLyrics,
+                animationSpec = androidx.compose.animation.core.tween(durationMillis = 300),
+                label = "lyrics_cover_toggle"
+            ) { show ->
+                if (show) {
+                    // 歌词模式：只显示歌词
+                    LyricView(
+                        lyrics = state.lyrics,
+                        activeIndex = state.lyricIndex,
+                        positionSec = state.positionMs / 1000.0,
+                        isPlaying = state.isPlaying,
+                        activeColor = activeColor,
+                        modifier = Modifier.fillMaxSize()
                     )
-                    Spacer(Modifier.height(32.dp))
-                    Text(
-                        cur?.nm ?: "未播放",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold, color = TextMain,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(0.8f)
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        cur?.ar ?: "-",
-                        style = MaterialTheme.typography.bodyMedium, color = TextSub,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center
-                    )
+                } else {
+                    // 唱片模式：显示唱片和歌曲信息
+                    Column(
+                        Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        RotatingCover(
+                            url = cur?.pc?.let { "$it?param=500y500" },
+                            playing = state.isPlaying,
+                            modifier = Modifier
+                        )
+                        Spacer(Modifier.height(32.dp))
+                        Text(
+                            cur?.nm ?: "未播放",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold, color = TextMain,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(0.8f)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            cur?.ar ?: "-",
+                            style = MaterialTheme.typography.bodyMedium, color = TextSub,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }
@@ -937,25 +1020,57 @@ private fun PortraitPlayerLayout(
                 onClick = { vm.cyclePlayMode() },
                 modifier = Modifier.toggleSemantics("播放模式", modeLabel)
             ) {
-                Icon(
-                    when (state.playMode) {
-                        PlayMode.LOOP -> Icons.Filled.Repeat
-                        PlayMode.SINGLE -> Icons.Filled.RepeatOne
-                        PlayMode.RANDOM -> Icons.Filled.Shuffle
+                androidx.compose.animation.AnimatedContent(
+                    targetState = state.playMode,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(200)) + scaleIn(
+                            initialScale = 0.8f,
+                            animationSpec = tween(200)
+                        )).togetherWith(
+                            fadeOut(animationSpec = tween(200)) + scaleOut(
+                                targetScale = 0.8f,
+                                animationSpec = tween(200)
+                            )
+                        )
                     },
-                    contentDescription = null, tint = TextMain
-                )
+                    label = "play_mode_landscape"
+                ) { mode ->
+                    Icon(
+                        when (mode) {
+                            PlayMode.LOOP -> Icons.Filled.Repeat
+                            PlayMode.SINGLE -> Icons.Filled.RepeatOne
+                            PlayMode.RANDOM -> Icons.Filled.Shuffle
+                        },
+                        contentDescription = null, tint = TextMain
+                    )
+                }
             }
             IconButton(onClick = { vm.prev() }) {
                 Icon(Icons.Filled.SkipPrevious, contentDescription = "上一首",
                     tint = TextMain, modifier = Modifier.size(36.dp))
             }
             FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(64.dp)) {
-                Icon(
-                    if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (state.isPlaying) "暂停" else "播放",
-                    modifier = Modifier.size(32.dp)
-                )
+                androidx.compose.animation.AnimatedContent(
+                    targetState = state.isPlaying,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(150)) + scaleIn(
+                            initialScale = 0.8f,
+                            animationSpec = tween(150)
+                        )).togetherWith(
+                            fadeOut(animationSpec = tween(150)) + scaleOut(
+                                targetScale = 0.8f,
+                                animationSpec = tween(150)
+                            )
+                        )
+                    },
+                    label = "play_pause_landscape"
+                ) { playing ->
+                    Icon(
+                        if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (playing) "暂停" else "播放",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
             IconButton(onClick = { vm.next() }) {
                 Icon(Icons.Filled.SkipNext, contentDescription = "下一首",

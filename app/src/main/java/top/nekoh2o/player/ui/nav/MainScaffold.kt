@@ -1,5 +1,12 @@
 package top.nekoh2o.player.ui.nav
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -155,23 +162,55 @@ private fun MiniPlayer(vm: PlayerViewModel, onOpenFullPlayer: () -> Unit) {
                     onClick = { vm.cyclePlayMode() },
                     modifier = Modifier.toggleSemantics("播放模式", modeLabel)
                 ) {
-                    Icon(
-                        when (state.playMode) {
-                            PlayMode.LOOP -> Icons.Filled.Repeat
-                            PlayMode.SINGLE -> Icons.Filled.RepeatOne
-                            PlayMode.RANDOM -> Icons.Filled.Shuffle
+                    AnimatedContent(
+                        targetState = state.playMode,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(200)) + scaleIn(
+                                initialScale = 0.8f,
+                                animationSpec = tween(200)
+                            )).togetherWith(
+                                fadeOut(animationSpec = tween(200)) + scaleOut(
+                                    targetScale = 0.8f,
+                                    animationSpec = tween(200)
+                                )
+                            )
                         },
-                        contentDescription = null
-                    )
+                        label = "play_mode_mini"
+                    ) { mode ->
+                        Icon(
+                            when (mode) {
+                                PlayMode.LOOP -> Icons.Filled.Repeat
+                                PlayMode.SINGLE -> Icons.Filled.RepeatOne
+                                PlayMode.RANDOM -> Icons.Filled.Shuffle
+                            },
+                            contentDescription = null
+                        )
+                    }
                 }
                 IconButton(onClick = { vm.prev() }) {
                     Icon(Icons.Filled.SkipPrevious, contentDescription = "上一首")
                 }
                 IconButton(onClick = { vm.togglePlay() }) {
-                    Icon(
-                        if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (state.isPlaying) "暂停" else "播放"
-                    )
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = state.isPlaying,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(150)) + scaleIn(
+                                initialScale = 0.8f,
+                                animationSpec = tween(150)
+                            )).togetherWith(
+                                fadeOut(animationSpec = tween(150)) + scaleOut(
+                                    targetScale = 0.8f,
+                                    animationSpec = tween(150)
+                                )
+                            )
+                        },
+                        label = "play_pause_mini"
+                    ) { playing ->
+                        Icon(
+                            if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (playing) "暂停" else "播放"
+                        )
+                    }
                 }
                 IconButton(onClick = { vm.next() }) {
                     Icon(Icons.Filled.SkipNext, contentDescription = "下一首")

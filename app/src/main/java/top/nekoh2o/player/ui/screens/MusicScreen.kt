@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -132,7 +133,15 @@ fun MusicScreen(vm: PlayerViewModel) {
             }
         }
 
-        if (state.searching || state.recLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (state.searching || state.recLoading) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = true,
+                enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)),
+                exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150))
+            ) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+        }
 
         // 根据搜索类型切换结果视图
         when {
@@ -479,7 +488,21 @@ private fun SearchResultList(
                 onPlay = { vm.playNow(song) },
                 onAdd = { vm.addToQueue(song) },
                 onFav = { vm.toggleFav(song) },
-                onAddToPlaylist = { onAddToPlaylist(song) }
+                onAddToPlaylist = { onAddToPlaylist(song) },
+                modifier = Modifier.animateItem(
+                    fadeInSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                    ),
+                    placementSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                    ),
+                    fadeOutSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                    )
+                )
             )
         }
         if (hasMore && results.isNotEmpty()) {
@@ -500,10 +523,11 @@ fun SongRow(
     onPlay: () -> Unit,
     onAdd: () -> Unit,
     onFav: () -> Unit,
-    onAddToPlaylist: (() -> Unit)? = null
+    onAddToPlaylist: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // 封面 + 标题合并为单个「播放」按钮节点，TalkBack 朗读为一条
@@ -531,10 +555,32 @@ fun SongRow(
             onClick = onFav,
             modifier = Modifier.toggleSemantics("收藏", if (isFav) "已收藏" else "未收藏")
         ) {
+            var scale by remember { mutableFloatStateOf(1f) }
+            val animatedScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = scale,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                ),
+                label = "favorite_scale_list"
+            )
+
+            LaunchedEffect(isFav) {
+                if (isFav) {
+                    scale = 1.3f
+                    kotlinx.coroutines.delay(150)
+                    scale = 1f
+                }
+            }
+
             Icon(
                 if (isFav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                 contentDescription = null,
-                tint = if (isFav) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                tint = if (isFav) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                modifier = Modifier.graphicsLayer {
+                    scaleX = animatedScale
+                    scaleY = animatedScale
+                }
             )
         }
         if (onAddToPlaylist != null) {

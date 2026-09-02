@@ -46,6 +46,7 @@ import top.nekoh2o.player.lyric.LyricParser
 import top.nekoh2o.player.playback.FloatingLyricService
 import top.nekoh2o.player.playback.FloatingLyricState
 import top.nekoh2o.player.playback.PlaybackService
+import top.nekoh2o.player.ui.manager.LyricManager
 import java.io.File
 
 enum class PlayMode { LOOP, SINGLE, RANDOM }
@@ -128,6 +129,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val kgRepo = top.nekoh2o.player.data.repo.KugouRepository()
     private val local = (app as PlayerApp).localStore
     private val settingsStore = SettingsStore(app)
+
+    // Delegated ViewModels
+    val cacheVm = top.nekoh2o.player.ui.viewmodel.CacheViewModel(app)
+    val downloadVm = top.nekoh2o.player.ui.viewmodel.DownloadViewModel(app)
+    val settingsVm = top.nekoh2o.player.ui.viewmodel.SettingsViewModel(app)
+    val searchVm = top.nekoh2o.player.ui.viewmodel.SearchViewModel(app)
+    val libraryVm = top.nekoh2o.player.ui.viewmodel.LibraryViewModel(app)
+    val neteaseVm = top.nekoh2o.player.ui.viewmodel.NeteaseAccountViewModel(app)
+    val kugouVm = top.nekoh2o.player.ui.viewmodel.KugouAccountViewModel(app)
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui
@@ -422,19 +432,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ==================== 搜索 ====================
     fun onQueryChange(q: String) {
         _ui.value = _ui.value.copy(query = q)
-        suggestJob?.cancel()
-        if (q.trim().length < 2) {
-            _ui.value = _ui.value.copy(suggestions = emptyList())
-            return
-        }
-        suggestJob = viewModelScope.launch {
-            delay(300)
-            val s = if (_ui.value.musicSource == "kugou") {
-                runCatching { kgRepo.searchSuggest(q.trim()) }.getOrDefault(emptyList())
-            } else {
-                runCatching { repo.suggest(q.trim()) }.getOrDefault(emptyList())
-            }
-            _ui.value = _ui.value.copy(suggestions = s)
+        searchVm.getSuggestions(q, _ui.value.musicSource) { suggestions ->
+            _ui.value = _ui.value.copy(suggestions = suggestions)
         }
     }
 
@@ -458,27 +457,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             suggestions = emptyList(), hasMore = true
         )
         viewModelScope.launch {
-            when (_ui.value.searchType) {
-                SearchType.SONG -> {
-                    val list = if (_ui.value.musicSource == "kugou") {
-                        runCatching { kgRepo.search(kw, 1) }.getOrDefault(emptyList())
-                    } else {
-                        runCatching { repo.search(kw, 0) }.getOrDefault(emptyList())
-                    }
-                    searchOffset = list.size
-                    _ui.value = _ui.value.copy(results = list, searching = false, hasMore = list.size >= 30)
-                }
-                SearchType.ARTIST -> {
-                    val list = runCatching { repo.searchArtist(kw, 0) }.getOrDefault(emptyList())
-                    searchOffset = list.size
-                    _ui.value = _ui.value.copy(artistResults = list, searching = false, hasMore = list.size >= 30)
-                }
-                SearchType.ALBUM -> {
-                    val list = runCatching { repo.searchAlbum(kw, 0) }.getOrDefault(emptyList())
-                    searchOffset = list.size
-                    _ui.value = _ui.value.copy(albumResults = list, searching = false, hasMore = list.size >= 30)
-                }
-            }
+            val result = searchVm.search(kw, _ui.value.searchType, _ui.value.musicSource)
+            searchOffset = result.songs.size + result.artists.size + result.albums.size
+            _ui.value = _ui.value.copy(
+                results = result.songs,
+                artistResults = result.artists,
+                albumResults = result.albums,
+                searching = false,
+                hasMore = result.hasMore
+            )
         }
     }
 
@@ -486,28 +473,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         if (searchLoading || !_ui.value.hasMore || searchKeyword.isEmpty()) return
         searchLoading = true
         viewModelScope.launch {
-            when (_ui.value.searchType) {
-                SearchType.SONG -> {
-                    val more = if (_ui.value.musicSource == "kugou") {
-                        val page = (searchOffset / 30) + 1
-                        runCatching { kgRepo.search(searchKeyword, page) }.getOrDefault(emptyList())
-                    } else {
-                        runCatching { repo.search(searchKeyword, searchOffset) }.getOrDefault(emptyList())
-                    }
-                    searchOffset += more.size
-                    _ui.value = _ui.value.copy(results = _ui.value.results + more, hasMore = more.size >= 30)
-                }
-                SearchType.ARTIST -> {
-                    val more = runCatching { repo.searchArtist(searchKeyword, searchOffset) }.getOrDefault(emptyList())
-                    searchOffset += more.size
-                    _ui.value = _ui.value.copy(artistResults = _ui.value.artistResults + more, hasMore = more.size >= 30)
-                }
-                SearchType.ALBUM -> {
-                    val more = runCatching { repo.searchAlbum(searchKeyword, searchOffset) }.getOrDefault(emptyList())
-                    searchOffset += more.size
-                    _ui.value = _ui.value.copy(albumResults = _ui.value.albumResults + more, hasMore = more.size >= 30)
-                }
-            }
+            val result = searchVm.loadMore(_ui.value.searchType, _ui.value.musicSource, _ui.value.hasMore)
+            searchOffset += result.songs.size + result.artists.size + result.albums.size
+            _ui.value = _ui.value.copy(
+                results = _ui.value.results + result.songs,
+                artistResults = _ui.value.artistResults + result.artists,
+                albumResults = _ui.value.albumResults + result.albums,
+                hasMore = result.hasMore
+            )
             searchLoading = false
         }
     }
@@ -515,7 +488,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // 加载歌手热门歌曲并返回（供 UI 导航到详情页用）
     fun loadArtistSongs(artistId: Long, onResult: (List<Song>) -> Unit) {
         viewModelScope.launch {
-            val songs = runCatching { repo.artistTopSongs(artistId) }.getOrDefault(emptyList())
+            val songs = searchVm.getArtistTopSongs(artistId)
             onResult(songs)
         }
     }
@@ -523,7 +496,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // 加载专辑歌曲并返回
     fun loadAlbumSongs(albumId: Long, onResult: (List<Song>) -> Unit) {
         viewModelScope.launch {
-            val songs = runCatching { repo.albumSongs(albumId) }.getOrDefault(emptyList())
+            val songs = searchVm.getAlbumDetail(albumId)
             onResult(songs)
         }
     }
@@ -533,22 +506,18 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         if (_ui.value.recLoading) return
         _ui.value = _ui.value.copy(recLoading = true)
         viewModelScope.launch {
-            if (_ui.value.musicSource == "kugou") {
-                // 酷狗推荐
-                val songs = runCatching { kgRepo.getRecommendSongs() }.getOrDefault(emptyList())
-                _ui.value = _ui.value.copy(recPlaylists = emptyList(), recSongs = songs, recLoading = false)
-            } else {
-                // 网易云推荐
-                val pls = runCatching { repo.personalizedPlaylists(8) }.getOrDefault(emptyList())
-                val songs = runCatching { repo.recommendSongs() }.getOrDefault(emptyList())
-                _ui.value = _ui.value.copy(recPlaylists = pls, recSongs = songs, recLoading = false)
-            }
+            val result = searchVm.loadRecommendations(_ui.value.musicSource)
+            _ui.value = _ui.value.copy(
+                recPlaylists = result.playlists,
+                recSongs = result.songs,
+                recLoading = false
+            )
         }
     }
 
     fun openPlaylist(id: Long) {
         viewModelScope.launch {
-            val songs = runCatching { repo.playlistTracks(id) }.getOrDefault(emptyList())
+            val songs = searchVm.getPlaylistDetail(id)
             if (songs.isNotEmpty()) {
                 _ui.value = _ui.value.copy(results = songs, hasMore = false)
                 searchKeyword = ""
@@ -651,7 +620,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private fun loadLyric(id: Long) {
         viewModelScope.launch {
             // 已下载且带本地 .lrc → 优先读本地，不走网络
-            val localLrc = DownloadIndex.get(id)?.lrcPath?.let { readLocalLrc(it) }
+            val localLrc = DownloadIndex.get(id)?.lrcPath?.let {
+                LyricManager.readLrcFile(getApplication(), it)
+            }
             val lys = if (!localLrc.isNullOrBlank()) {
                 LyricParser.parse(localLrc)
             } else {
@@ -661,45 +632,30 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** 读取本地 .lrc 文件内容，支持 SAF content:// 与普通文件路径。 */
-    private fun readLocalLrc(path: String): String? = runCatching {
-        if (path.startsWith("content:")) {
-            getApplication<Application>().contentResolver
-                .openInputStream(Uri.parse(path))?.bufferedReader()?.use { it.readText() }
-        } else {
-            val f = File(path)
-            if (f.exists()) f.readText() else null
-        }
-    }.getOrNull()
-
-    /** 将已解析的歌词行重建为标准 .lrc 文本，供下载时保存。 */
-    private fun buildLrcText(lines: List<LyricLine>): String = buildString {
-        for (l in lines) {
-            val totalCs = (l.time * 100).toLong()
-            val mm = totalCs / 6000
-            val ss = (totalCs % 6000) / 100
-            val cs = totalCs % 100
-            append(String.format("[%02d:%02d.%02d]", mm, ss, cs)).append(l.text).append('\n')
-        }
-    }
-
     // ==================== 收藏 / 歌单 ====================
     fun toggleFav(song: Song) {
-        val nowFav = local.toggleFav(song)
+        val nowFav = libraryVm.toggleFavorite(song)
         pushMineToState()
         toast(if (nowFav) "已收藏" else "已取消收藏")
     }
-    fun isFav(id: Long) = local.isFav(id)
+    fun isFav(id: Long) = libraryVm.isFavorite(id)
 
-    fun createPlaylist(name: String) { local.createPlaylist(name); pushMineToState() }
-    fun deletePlaylist(index: Int) { local.deletePlaylist(index); pushMineToState() }
+    fun createPlaylist(name: String) {
+        libraryVm.createPlaylist(name)
+        pushMineToState()
+    }
+    fun deletePlaylist(index: Int) {
+        libraryVm.deletePlaylist(index)
+        pushMineToState()
+    }
     fun addToPlaylist(index: Int, song: Song) {
-        val ok = local.addToPlaylist(index, song)
+        val ok = libraryVm.addToPlaylist(index, song)
         pushMineToState()
         toast(if (ok) "已添加到歌单" else "歌曲已在歌单中")
     }
     fun removeFromPlaylist(plIndex: Int, songIndex: Int) {
-        local.removeFromPlaylist(plIndex, songIndex); pushMineToState()
+        libraryVm.removeFromPlaylist(plIndex, songIndex)
+        pushMineToState()
     }
 
     /** 播放全部：将一批歌曲替换当前队列并从第 0 首开始播放 */
@@ -729,46 +685,46 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ==================== 个性化设置 ====================
     // 全局背景
     fun setGlobalBgEnabled(v: Boolean) {
-        val s = _ui.value.settings.copy(globalBgEnabled = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setGlobalBgEnabled(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     fun setGlobalMaskAlpha(v: Float) {
-        val s = _ui.value.settings.copy(globalMaskAlpha = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setGlobalMaskAlpha(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     fun setGlobalBlurRadius(v: Int) {
-        val s = _ui.value.settings.copy(globalBlurRadius = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setGlobalBlurRadius(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     // 全屏播放器背景
     fun setFpBgSource(src: BgSource) {
-        val s = _ui.value.settings.copy(fpBgSource = src)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setFpBgSource(src, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     fun setFpMaskAlpha(v: Float) {
-        val s = _ui.value.settings.copy(fpMaskAlpha = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setFpMaskAlpha(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     fun setFpBlurRadius(v: Int) {
-        val s = _ui.value.settings.copy(fpBlurRadius = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setFpBlurRadius(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     fun setCacheEnabled(v: Boolean) {
-        val s = _ui.value.settings.copy(cacheEnabled = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setCacheEnabled(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     fun setControlAlpha(v: Float) {
-        val s = _ui.value.settings.copy(controlAlpha = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setControlAlpha(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     fun setLandscapeMode(v: Boolean) {
-        val s = _ui.value.settings.copy(landscapeMode = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setLandscapeMode(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
         refreshWallpaper(v)  // 切换横竖屏时立即刷新壁纸以匹配新模式
     }
     fun setUiScale(scale: Float) {
-        val s = _ui.value.settings.copy(uiScale = scale.coerceIn(0.8f, 1.3f))
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setUiScale(scale, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     fun setQuality(level: String) {
         viewModelScope.launch { CookieStore.setLevel(level) }
@@ -817,7 +773,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ==================== 缓存管理 ====================
     fun refreshCacheList() {
         viewModelScope.launch {
-            val keys = MusicCache.cachedKeys()
+            val keys = cacheVm.getCachedKeys()
             // 汇总所有已知歌曲来源，构建 id → Song 查表，修复缓存全显示"未知歌曲"
             val lookup = HashMap<Long, Song>()
             val sources = listOf(
@@ -851,37 +807,32 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSelectedCache() {
         val sel = _ui.value.selectedCacheKeys
-        sel.forEach { MusicCache.remove(it) }
-        toast("已删除 ${sel.size} 项缓存")
+        val count = cacheVm.removeCache(sel)
+        toast("已删除 $count 项缓存")
         refreshCacheList()
     }
 
     fun clearAllCache() {
-        MusicCache.clear()
+        cacheVm.clearAllCache()
         toast("已清空所有缓存")
         refreshCacheList()
     }
 
     // ==================== 网易云 Cookie 管理 ====================
     fun loadNcCookie() {
-        _ui.value = _ui.value.copy(ncCookie = CookieStore.userCookieValue())
+        _ui.value = _ui.value.copy(ncCookie = neteaseVm.getNcCookie())
     }
 
     fun saveNcCookie(cookie: String) {
-        viewModelScope.launch {
-            CookieStore.setUserCookie(cookie.trim())
+        neteaseVm.saveNcCookie(cookie) {
             _ui.value = _ui.value.copy(ncCookie = cookie.trim())
-            // 同步到云端
             schedulePush()
             toast("Cookie 已保存")
         }
     }
 
     fun saveKgToken(token: String, platform: Int) {
-        viewModelScope.launch {
-            CookieStore.setKgToken(token.trim())
-            CookieStore.setKgPlatform(platform)
-            // 同步到云端
+        kugouVm.saveToken(token, platform) {
             schedulePush()
             toast("酷狗 Token 已保存")
             if (token.isNotEmpty()) {
@@ -891,11 +842,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearNcCookie() {
-        viewModelScope.launch {
-            CookieStore.setUserCookie("")
-            _ui.value = _ui.value.copy(ncCookie = "")
-            toast("Cookie 已清除")
-        }
+        neteaseVm.clearNcCookie()
+        _ui.value = _ui.value.copy(ncCookie = "")
+        toast("Cookie 已清除")
     }
     fun setSleepTimer(minutes: Int) {
         sleepJob?.cancel()
@@ -913,9 +862,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ==================== 倍速 ====================
     fun setPlaybackSpeed(speed: Float) {
         controller?.setPlaybackSpeed(speed)
-        val s = _ui.value.settings.copy(playbackSpeed = speed)
-        settingsStore.save(s)
-        _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setPlaybackSpeed(speed, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
 
     // ==================== 下载 ====================
@@ -924,58 +872,37 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * @param quality 音质标识：standard / higher / exhigh / lossless
      */
     fun downloadSong(song: Song, quality: String = _ui.value.quality) {
-        if (DownloadIndex.isDownloaded(song.id)) { toast("已下载过该歌曲"); return }
         viewModelScope.launch {
-            val url = runCatching { repo.resolvePlayUrl(song, quality) }.getOrNull()
-            if (url == null) { toast("获取下载地址失败"); return@launch }
-            // 拉取歌词一并保存为 .lrc（失败则跳过，播放时回退网络）
-            val lrcText = runCatching { repo.lyric(song) }.getOrNull()
-                ?.takeIf { it.isNotEmpty() }?.let { buildLrcText(it) }
-            val dirUri = _ui.value.settings.downloadDirUri.ifBlank { null }
-            toast("开始下载：${song.nm}")
-            val result = runCatching {
-                Downloader.download(getApplication(), song, url, quality, lrcText, dirUri)
-            }.getOrElse {
-                toast("下载失败：${it.message}"); return@launch
-            }
-            DownloadIndex.add(result)
-            _ui.value = _ui.value.copy(downloadedSongs = DownloadIndex.all())
-            toast("已下载：${song.nm}")
+            downloadVm.downloadSong(
+                song = song,
+                quality = quality,
+                downloadDirUri = _ui.value.settings.downloadDirUri,
+                onSuccess = {
+                    _ui.value = _ui.value.copy(downloadedSongs = DownloadIndex.all())
+                    toast("已下载：${song.nm}")
+                },
+                onError = { error ->
+                    toast(error)
+                }
+            )
         }
     }
 
     /** 删除一首已下载歌曲（同时删除索引和文件）。 */
     fun removeDownloaded(songId: Long) {
-        val downloaded = DownloadIndex.get(songId)
-        if (downloaded != null) {
-            // 删除音频文件
-            runCatching {
-                val audioUri = android.net.Uri.parse(downloaded.audioUri)
-                if (audioUri.scheme == "content") {
-                    getApplication<android.app.Application>().contentResolver.delete(audioUri, null, null)
-                } else {
-                    java.io.File(downloaded.audioUri).delete()
-                }
-            }.onFailure { e ->
-                android.util.Log.w("PlayerViewModel", "删除音频文件失败: ${e.message}")
-            }
-            // 删除歌词文件
-            downloaded.lrcPath?.let { lrcPath ->
-                runCatching {
-                    val lrcUri = android.net.Uri.parse(lrcPath)
-                    if (lrcUri.scheme == "content") {
-                        getApplication<android.app.Application>().contentResolver.delete(lrcUri, null, null)
-                    } else {
-                        java.io.File(lrcPath).delete()
-                    }
-                }.onFailure { e ->
-                    android.util.Log.w("PlayerViewModel", "删除歌词文件失败: ${e.message}")
-                }
-            }
-        }
-        DownloadIndex.remove(songId)
+        downloadVm.removeDownloaded(songId)
         _ui.value = _ui.value.copy(downloadedSongs = DownloadIndex.all())
-        toast("已删除文件")
+        toast("已删除")
+    }
+
+    /** 刷新已下载列表 */
+    fun refreshDownloaded() {
+        _ui.value = _ui.value.copy(downloadedSongs = downloadVm.getDownloadedSongs())
+    }
+
+    fun setDownloadDir(uri: String) {
+        val updated = settingsVm.setDownloadDir(uri, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
 
     /** 重试失败的下载任务 */
@@ -983,21 +910,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         downloadSong(song, quality)
     }
 
-    /** 设置自定义下载目录（SAF tree URI）。 */
-    fun setDownloadDir(uri: String) {
-        val s = _ui.value.settings.copy(downloadDirUri = uri)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
-        toast("下载目录已更新")
-    }
-
     // ==================== 悬浮窗歌词设置 ====================
     fun setFloatingLyricDoubleRow(v: Boolean) {
-        val s = _ui.value.settings.copy(floatingLyricDoubleRow = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setFloatingLyricDoubleRow(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
     fun setFloatingLyricShowTranslation(v: Boolean) {
-        val s = _ui.value.settings.copy(floatingLyricShowTranslation = v)
-        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setFloatingLyricShowTranslation(v, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
     }
 
     // ==================== 悬浮窗歌词 ====================
@@ -1015,9 +935,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             context.startActivity(intent)
             return
         }
-        val s = _ui.value.settings.copy(floatingLyricEnabled = wantEnable)
-        settingsStore.save(s)
-        _ui.value = _ui.value.copy(settings = s)
+        val updated = settingsVm.setFloatingLyricEnabled(wantEnable, _ui.value.settings)
+        _ui.value = _ui.value.copy(settings = updated)
         val serviceIntent = Intent(context, FloatingLyricService::class.java)
         if (wantEnable) context.startService(serviceIntent) else context.stopService(serviceIntent)
     }
@@ -1182,10 +1101,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     // ==================== QR 扫码登录（网易云） ====================
-    suspend fun qrKeyOnce(): String? = repo.qrKey()
-    suspend fun qrCreateOnce(key: String): String? = repo.qrCreate(key)
+    suspend fun qrKeyOnce(): String? = neteaseVm.getQrKey()
+    suspend fun qrCreateOnce(key: String): String? = neteaseVm.createQr(key)
     suspend fun qrCheckOnce(key: String): Int {
-        val code = repo.qrCheck(key)
+        val code = neteaseVm.checkQrStatus(key)
         if (code == 803) {
             _ui.value = _ui.value.copy(toast = "网易云登录成功")
             schedulePush()
@@ -1227,7 +1146,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun syncNcPlaylistToLocal(playlist: top.nekoh2o.player.data.model.NcPlaylistItem) {
         viewModelScope.launch {
-            val songs = repo.playlistTracks(playlist.id)
+            val songs = neteaseVm.getPlaylistDetail(playlist.id)
             if (songs.isEmpty()) {
                 toast("歌单为空或获取失败")
                 return@launch
@@ -1246,28 +1165,20 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * 同步红心歌曲到本地收藏
      */
     fun syncNcLikeSongsToLocal(songs: List<Song>) {
-        viewModelScope.launch {
-            songs.forEach { song ->
-                if (!local.isFav(song.id)) {
-                    local.toggleFav(song)
-                }
-            }
-            pushMineToState()
-            schedulePush()
-            toast("已同步 ${songs.size} 首红心歌曲到收藏")
-        }
+        libraryVm.syncNeteaseHeartToLocal(songs)
+        pushMineToState()
+        schedulePush()
+        toast("已同步 ${songs.size} 首红心歌曲到收藏")
     }
 
     /**
      * 同步播放记录到本地历史
      */
     fun syncNcRecordToLocal(songs: List<Song>) {
-        viewModelScope.launch {
-            songs.forEach { local.addHistory(it) }
-            pushMineToState()
-            schedulePush()
-            toast("已同步 ${songs.size} 首播放记录到历史")
-        }
+        libraryVm.syncNeteaseRecordToLocal(songs)
+        pushMineToState()
+        schedulePush()
+        toast("已同步 ${songs.size} 首播放记录到历史")
     }
 
     // ==================== 提示 ====================
@@ -1311,13 +1222,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * 创建QQ扫码登录二维码
      */
     suspend fun kgCreateQQLoginQR(): top.nekoh2o.player.data.model.KgQQQRCreateData? =
-        kgRepo.createQQLoginQR()
+        kugouVm.createQQLoginQR()
 
     /**
      * 检查QQ扫码登录状态
      */
     suspend fun kgCheckQQLoginQR(qrData: top.nekoh2o.player.data.model.KgQQQRCreateData): top.nekoh2o.player.data.model.KgQQQRCheckResp? =
-        kgRepo.checkQQLoginQR(qrData)
+        kugouVm.checkQQLoginQR(qrData)
 
     // ==================== 播放状态保存/恢复 ====================
 
