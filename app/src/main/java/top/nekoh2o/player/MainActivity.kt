@@ -2,6 +2,7 @@ package top.nekoh2o.player
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -15,6 +16,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +45,16 @@ class MainActivity : ComponentActivity() {
         handleQQAuthDeepLink(intent)
         setContent {
             val state by vm.ui.collectAsState()
+
+            // 根据横屏模式设置锁定屏幕方向
+            LaunchedEffect(state.settings.landscapeMode) {
+                requestedOrientation = if (state.settings.landscapeMode) {
+                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                } else {
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+            }
+
             // 壁纸开启且已拿到图时才让控件透明，否则白字会落到纯色底上
             val translucent = state.settings.globalBgEnabled && state.wallpaperUrl != null
 

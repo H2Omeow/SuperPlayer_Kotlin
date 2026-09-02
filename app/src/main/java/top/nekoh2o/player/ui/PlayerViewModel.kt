@@ -569,6 +569,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.prepare()
         c.play()
         syncFromController()
+        saveCurrentPlaybackState()
     }
 
     fun addToQueue(song: Song) {
@@ -579,6 +580,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.addMediaItem(song.toMediaItem())
         syncFromController()
         toast("已添加到播放列表")
+        saveCurrentPlaybackState()
     }
 
     fun removeFromQueue(index: Int) {
@@ -587,6 +589,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         queue.removeAt(index)
         c.removeMediaItem(index)
         syncFromController()
+        saveCurrentPlaybackState()
     }
 
     fun moveInQueue(from: Int, to: Int) {
@@ -596,6 +599,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         queue.add(to, s)
         c.moveMediaItem(from, to)
         syncFromController()
+        saveCurrentPlaybackState()
     }
 
     fun playAt(index: Int) {
@@ -603,13 +607,30 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         if (index !in queue.indices) return
         c.seekTo(index, 0); c.prepare(); c.play()
         syncFromController()
+        saveCurrentPlaybackState()
     }
 
     // ==================== 播放控制 ====================
-    fun togglePlay() { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
-    fun next() { controller?.seekToNext() }
-    fun prev() { controller?.seekToPrevious() }
-    fun seekTo(ms: Long) { controller?.seekTo(ms) }
+    fun togglePlay() {
+        controller?.let { if (it.isPlaying) it.pause() else it.play() }
+        saveCurrentPlaybackState()
+    }
+    fun next() {
+        controller?.seekToNext()
+        saveCurrentPlaybackState()
+    }
+    fun prev() {
+        controller?.seekToPrevious()
+        saveCurrentPlaybackState()
+    }
+    fun seekTo(ms: Long) {
+        controller?.seekTo(ms)
+        // 延迟保存，避免拖动进度条时频繁写入
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(500)
+            saveCurrentPlaybackState()
+        }
+    }
 
     fun cyclePlayMode() {
         val c = controller ?: return
@@ -693,6 +714,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.prepare()
         c.play()
         syncFromController()
+        saveCurrentPlaybackState()
     }
 
     private fun pushMineToState() {
@@ -1299,6 +1321,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun restorePlaybackState() {
         val state = settingsStore.loadPlaybackState() ?: return
+        if (state.queue.isEmpty()) return
         val c = controller ?: return
 
         viewModelScope.launch {
@@ -1315,7 +1338,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             // 不自动播放，让用户手动开始
 
             syncFromController()
-            toast("已恢复上次播放")
+            android.util.Log.d("PlayerViewModel", "已恢复播放状态：队列 ${state.queue.size} 首，位置 $safeIndex")
         }
     }
 
