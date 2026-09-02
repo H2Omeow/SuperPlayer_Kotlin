@@ -218,6 +218,24 @@ private fun PersonalizationSettings(vm: PlayerViewModel, s: top.nekoh2o.player.d
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Column(Modifier.weight(1f)) {
+            Text("横屏模式", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "开启后全屏播放器固定为横屏布局（封面+歌词），平板设备自动检测",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = s.landscapeMode, onCheckedChange = { vm.setLandscapeMode(it) })
+    }
+
+    HorizontalDivider()
+
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text("启用壁纸背景", style = MaterialTheme.typography.bodyLarge)
         Switch(checked = s.globalBgEnabled, onCheckedChange = { vm.setGlobalBgEnabled(it) })
     }

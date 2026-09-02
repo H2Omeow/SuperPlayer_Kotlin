@@ -172,6 +172,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             // 恢复已保存的播放倍速
             val savedSpeed = _ui.value.settings.playbackSpeed
             if (savedSpeed != 1.0f) controller?.setPlaybackSpeed(savedSpeed)
+            // 恢复上次播放状态
+            restorePlaybackState()
         }, MoreExecutors.directExecutor())
 
         viewModelScope.launch {
@@ -221,6 +223,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             pushMineToState()
             loadLyric(song.id)
         }
+        // 自动保存播放状态
+        saveCurrentPlaybackState()
     }
 
     private fun startProgressLoop() {
@@ -735,6 +739,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val s = _ui.value.settings.copy(controlAlpha = v)
         settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
     }
+    fun setLandscapeMode(v: Boolean) {
+        val s = _ui.value.settings.copy(landscapeMode = v)
+        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+    }
     fun setQuality(level: String) {
         viewModelScope.launch { CookieStore.setLevel(level) }
         _ui.value = _ui.value.copy(quality = level)
@@ -772,9 +780,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
     }
-    fun refreshWallpaper() {
+    fun refreshWallpaper(isLandscape: Boolean = false) {
         viewModelScope.launch {
-            val url = userRepo.randomWallpaper()
+            val url = userRepo.randomWallpaper(isLandscape)
             _ui.value = _ui.value.copy(wallpaperUrl = url)
         }
     }
@@ -1284,7 +1292,49 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun kgCheckQQLoginQR(qrData: top.nekoh2o.player.data.model.KgQQQRCreateData): top.nekoh2o.player.data.model.KgQQQRCheckResp? =
         kgRepo.checkQQLoginQR(qrData)
 
+    // ==================== 播放状态保存/恢复 ====================
+
+    /**
+     * 恢复上次播放状态
+     */
+    private fun restorePlaybackState() {
+        val state = settingsStore.loadPlaybackState() ?: return
+        val c = controller ?: return
+
+        viewModelScope.launch {
+            // 恢复队列
+            queue.clear()
+            queue.addAll(state.queue)
+            c.clearMediaItems()
+            c.addMediaItems(state.queue.map { it.toMediaItem() })
+
+            // 恢复播放位置
+            val safeIndex = state.currentIndex.coerceIn(0, state.queue.size - 1)
+            c.seekTo(safeIndex, state.position)
+            c.prepare()
+            // 不自动播放，让用户手动开始
+
+            syncFromController()
+            toast("已恢复上次播放")
+        }
+    }
+
+    /**
+     * 保存当前播放状态
+     */
+    fun saveCurrentPlaybackState() {
+        val c = controller ?: return
+        if (queue.isEmpty()) return
+
+        val currentIndex = c.currentMediaItemIndex.coerceAtLeast(0)
+        val position = c.currentPosition.coerceAtLeast(0)
+
+        settingsStore.savePlaybackState(queue.toList(), currentIndex, position)
+    }
+
     override fun onCleared() {
+        // 保存播放状态
+        saveCurrentPlaybackState()
         stopProgressLoop()
         controller?.release()
         super.onCleared()

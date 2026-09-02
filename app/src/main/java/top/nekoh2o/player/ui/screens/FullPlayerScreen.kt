@@ -69,6 +69,8 @@ import androidx.compose.ui.platform.LocalContext
 import top.nekoh2o.player.ui.a11y.clickableRow
 import top.nekoh2o.player.ui.a11y.toggleSemantics
 import top.nekoh2o.player.ui.theme.NekoDefaults
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 
 private val TextMain = Color.White
 private val TextSub = Color.White.copy(alpha = 0.7f)
@@ -86,6 +88,11 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
     var showLyrics by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activeColor = MaterialTheme.colorScheme.primary
+    val configuration = LocalConfiguration.current
+
+    // 检测是否为横屏：优先使用设置中的横屏模式，其次自动检测设备方向
+    val isLandscape = state.settings.landscapeMode ||
+        configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Box(Modifier.fillMaxSize()) {
         // 背景层：壁纸 or 封面
@@ -104,141 +111,39 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                 .background(Color.Black.copy(alpha = state.settings.fpMaskAlpha))
         )
 
-        // 内容
-        Column(
-            Modifier.fillMaxSize()
-                .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(horizontal = 20.dp)
-        ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "收起",
-                        tint = TextMain)
-                }
-                Spacer(Modifier.weight(1f))
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // 唱片/歌词切换区域
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .clickable(
-                        onClickLabel = if (showLyrics) "显示唱片" else "显示歌词",
-                        role = Role.Button
-                    ) { showLyrics = !showLyrics },
-                contentAlignment = Alignment.Center
-            ) {
-                if (showLyrics) {
-                    // 歌词模式：只显示歌词
-                    LyricView(
-                        lyrics = state.lyrics,
-                        activeIndex = state.lyricIndex,
-                        positionSec = state.positionMs / 1000.0,
-                        isPlaying = state.isPlaying,
-                        activeColor = activeColor,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    // 唱片模式：显示唱片和歌曲信息
-                    Column(
-                        Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        RotatingCover(
-                            url = cur?.pc?.let { "$it?param=500y500" },
-                            playing = state.isPlaying,
-                            modifier = Modifier
-                        )
-                        Spacer(Modifier.height(32.dp))
-                        Text(
-                            cur?.nm ?: "未播放",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold, color = TextMain,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(0.8f)
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            cur?.ar ?: "-",
-                            style = MaterialTheme.typography.bodyMedium, color = TextSub,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-
-            ControlRow(
-                isFav = cur != null && vm.isFav(cur.id),
-                speed = state.settings.playbackSpeed,
-                sleepMinutes = state.sleepMinutes,
-                floatingEnabled = state.settings.floatingLyricEnabled,
-                onSpeedClick = { showSpeedDialog = true },
-                onTimerClick = { showTimerDialog = true },
-                onDownloadClick = { if (cur != null) showQualityDialog = true },
-                onFavClick = { cur?.let { vm.toggleFav(it) } },
-                onFloatingClick = {
-                    if (!Settings.canDrawOverlays(context)) showFloatingPermDialog = true
-                    else vm.toggleFloatingLyric(context)
-                }
+        // 内容：根据横竖屏切换布局
+        if (isLandscape) {
+            // 横屏布局：左侧封面，右侧歌词和控制
+            LandscapePlayerLayout(
+                state = state,
+                vm = vm,
+                cur = cur,
+                activeColor = activeColor,
+                onClose = onClose,
+                onShowQueue = { showQueue = true },
+                onShowSpeedDialog = { showSpeedDialog = true },
+                onShowTimerDialog = { showTimerDialog = true },
+                onShowQualityDialog = { showQualityDialog = true },
+                onShowFloatingPermDialog = { showFloatingPermDialog = true },
+                context = context
             )
-
-            ProgressBar(
-                positionMs = state.positionMs,
-                durationMs = state.durationMs,
-                onSeek = { vm.seekTo(it) }
+        } else {
+            // 竖屏布局：原有的上下布局
+            PortraitPlayerLayout(
+                state = state,
+                vm = vm,
+                cur = cur,
+                activeColor = activeColor,
+                showLyrics = showLyrics,
+                onToggleLyrics = { showLyrics = !showLyrics },
+                onClose = onClose,
+                onShowQueue = { showQueue = true },
+                onShowSpeedDialog = { showSpeedDialog = true },
+                onShowTimerDialog = { showTimerDialog = true },
+                onShowQualityDialog = { showQualityDialog = true },
+                onShowFloatingPermDialog = { showFloatingPermDialog = true },
+                context = context
             )
-
-            Spacer(Modifier.height(8.dp))
-
-            Row(
-                Modifier.fillMaxWidth().padding(bottom = 24.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val modeLabel = when (state.playMode) {
-                    PlayMode.LOOP -> "列表循环"
-                    PlayMode.SINGLE -> "单曲循环"
-                    PlayMode.RANDOM -> "随机播放"
-                }
-                IconButton(
-                    onClick = { vm.cyclePlayMode() },
-                    modifier = Modifier.toggleSemantics("播放模式", modeLabel)
-                ) {
-                    Icon(
-                        when (state.playMode) {
-                            PlayMode.LOOP -> Icons.Filled.Repeat
-                            PlayMode.SINGLE -> Icons.Filled.RepeatOne
-                            PlayMode.RANDOM -> Icons.Filled.Shuffle
-                        },
-                        contentDescription = null, tint = TextMain
-                    )
-                }
-                IconButton(onClick = { vm.prev() }) {
-                    Icon(Icons.Filled.SkipPrevious, contentDescription = "上一首",
-                        tint = TextMain, modifier = Modifier.size(36.dp))
-                }
-                FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(64.dp)) {
-                    Icon(
-                        if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (state.isPlaying) "暂停" else "播放",
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-                IconButton(onClick = { vm.next() }) {
-                    Icon(Icons.Filled.SkipNext, contentDescription = "下一首",
-                        tint = TextMain, modifier = Modifier.size(36.dp))
-                }
-                IconButton(onClick = { showQueue = true }) {
-                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "播放列表",
-                        tint = TextMain)
-                }
-            }
         }
     }
 
@@ -754,4 +659,312 @@ private fun fmtTime(ms: Long): String {
     if (ms <= 0) return "00:00"
     val total = ms / 1000
     return "%02d:%02d".format(total / 60, total % 60)
+}
+
+// ==================== 横屏布局 ====================
+@Composable
+private fun LandscapePlayerLayout(
+    state: top.nekoh2o.player.ui.UiState,
+    vm: PlayerViewModel,
+    cur: top.nekoh2o.player.data.model.Song?,
+    activeColor: Color,
+    onClose: () -> Unit,
+    onShowQueue: () -> Unit,
+    onShowSpeedDialog: () -> Unit,
+    onShowTimerDialog: () -> Unit,
+    onShowQualityDialog: () -> Unit,
+    onShowFloatingPermDialog: () -> Unit,
+    context: android.content.Context
+) {
+    Row(
+        Modifier.fillMaxSize()
+            .windowInsetsPadding(WindowInsets.systemBars)
+            .padding(horizontal = 20.dp)
+    ) {
+        // 左侧：关闭按钮和封面
+        Column(
+            Modifier
+                .weight(0.45f)
+                .fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "收起",
+                        tint = TextMain)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            RotatingCover(
+                url = cur?.pc?.let { "$it?param=500y500" },
+                playing = state.isPlaying,
+                modifier = Modifier.fillMaxWidth(0.85f).aspectRatio(1f)
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                cur?.nm ?: "未播放",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold, color = TextMain,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(0.9f)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                cur?.ar ?: "-",
+                style = MaterialTheme.typography.bodyMedium, color = TextSub,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.width(20.dp))
+
+        // 右侧：歌词和控制
+        Column(
+            Modifier
+                .weight(0.55f)
+                .fillMaxHeight()
+        ) {
+            Spacer(Modifier.height(48.dp))
+
+            // 歌词区域（始终显示）
+            LyricView(
+                lyrics = state.lyrics,
+                activeIndex = state.lyricIndex,
+                positionSec = state.positionMs / 1000.0,
+                isPlaying = state.isPlaying,
+                activeColor = activeColor,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // 控制栏
+            ControlRow(
+                isFav = cur != null && vm.isFav(cur.id),
+                speed = state.settings.playbackSpeed,
+                sleepMinutes = state.sleepMinutes,
+                floatingEnabled = state.settings.floatingLyricEnabled,
+                onSpeedClick = onShowSpeedDialog,
+                onTimerClick = onShowTimerDialog,
+                onDownloadClick = { if (cur != null) onShowQualityDialog() },
+                onFavClick = { cur?.let { vm.toggleFav(it) } },
+                onFloatingClick = {
+                    if (!Settings.canDrawOverlays(context)) onShowFloatingPermDialog()
+                    else vm.toggleFloatingLyric(context)
+                }
+            )
+
+            ProgressBar(
+                positionMs = state.positionMs,
+                durationMs = state.durationMs,
+                onSeek = { vm.seekTo(it) }
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // 播放控制按钮
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 24.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val modeLabel = when (state.playMode) {
+                    PlayMode.LOOP -> "列表循环"
+                    PlayMode.SINGLE -> "单曲循环"
+                    PlayMode.RANDOM -> "随机播放"
+                }
+                IconButton(
+                    onClick = { vm.cyclePlayMode() },
+                    modifier = Modifier.toggleSemantics("播放模式", modeLabel)
+                ) {
+                    Icon(
+                        when (state.playMode) {
+                            PlayMode.LOOP -> Icons.Filled.Repeat
+                            PlayMode.SINGLE -> Icons.Filled.RepeatOne
+                            PlayMode.RANDOM -> Icons.Filled.Shuffle
+                        },
+                        contentDescription = null, tint = TextMain
+                    )
+                }
+                IconButton(onClick = { vm.prev() }) {
+                    Icon(Icons.Filled.SkipPrevious, contentDescription = "上一首",
+                        tint = TextMain, modifier = Modifier.size(36.dp))
+                }
+                FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(64.dp)) {
+                    Icon(
+                        if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (state.isPlaying) "暂停" else "播放",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+                IconButton(onClick = { vm.next() }) {
+                    Icon(Icons.Filled.SkipNext, contentDescription = "下一首",
+                        tint = TextMain, modifier = Modifier.size(36.dp))
+                }
+                IconButton(onClick = onShowQueue) {
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "播放列表",
+                        tint = TextMain)
+                }
+            }
+        }
+    }
+}
+
+// ==================== 竖屏布局 ====================
+@Composable
+private fun PortraitPlayerLayout(
+    state: top.nekoh2o.player.ui.UiState,
+    vm: PlayerViewModel,
+    cur: top.nekoh2o.player.data.model.Song?,
+    activeColor: Color,
+    showLyrics: Boolean,
+    onToggleLyrics: () -> Unit,
+    onClose: () -> Unit,
+    onShowQueue: () -> Unit,
+    onShowSpeedDialog: () -> Unit,
+    onShowTimerDialog: () -> Unit,
+    onShowQualityDialog: () -> Unit,
+    onShowFloatingPermDialog: () -> Unit,
+    context: android.content.Context
+) {
+    Column(
+        Modifier.fillMaxSize()
+            .windowInsetsPadding(WindowInsets.systemBars)
+            .padding(horizontal = 20.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "收起",
+                    tint = TextMain)
+            }
+            Spacer(Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // 唱片/歌词切换区域
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clickable(
+                    onClickLabel = if (showLyrics) "显示唱片" else "显示歌词",
+                    role = Role.Button
+                ) { onToggleLyrics() },
+            contentAlignment = Alignment.Center
+        ) {
+            if (showLyrics) {
+                // 歌词模式：只显示歌词
+                LyricView(
+                    lyrics = state.lyrics,
+                    activeIndex = state.lyricIndex,
+                    positionSec = state.positionMs / 1000.0,
+                    isPlaying = state.isPlaying,
+                    activeColor = activeColor,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                // 唱片模式：显示唱片和歌曲信息
+                Column(
+                    Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    RotatingCover(
+                        url = cur?.pc?.let { "$it?param=500y500" },
+                        playing = state.isPlaying,
+                        modifier = Modifier
+                    )
+                    Spacer(Modifier.height(32.dp))
+                    Text(
+                        cur?.nm ?: "未播放",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold, color = TextMain,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(0.8f)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        cur?.ar ?: "-",
+                        style = MaterialTheme.typography.bodyMedium, color = TextSub,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        ControlRow(
+            isFav = cur != null && vm.isFav(cur.id),
+            speed = state.settings.playbackSpeed,
+            sleepMinutes = state.sleepMinutes,
+            floatingEnabled = state.settings.floatingLyricEnabled,
+            onSpeedClick = onShowSpeedDialog,
+            onTimerClick = onShowTimerDialog,
+            onDownloadClick = { if (cur != null) onShowQualityDialog() },
+            onFavClick = { cur?.let { vm.toggleFav(it) } },
+            onFloatingClick = {
+                if (!Settings.canDrawOverlays(context)) onShowFloatingPermDialog()
+                else vm.toggleFloatingLyric(context)
+            }
+        )
+
+        ProgressBar(
+            positionMs = state.positionMs,
+            durationMs = state.durationMs,
+            onSeek = { vm.seekTo(it) }
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = 24.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val modeLabel = when (state.playMode) {
+                PlayMode.LOOP -> "列表循环"
+                PlayMode.SINGLE -> "单曲循环"
+                PlayMode.RANDOM -> "随机播放"
+            }
+            IconButton(
+                onClick = { vm.cyclePlayMode() },
+                modifier = Modifier.toggleSemantics("播放模式", modeLabel)
+            ) {
+                Icon(
+                    when (state.playMode) {
+                        PlayMode.LOOP -> Icons.Filled.Repeat
+                        PlayMode.SINGLE -> Icons.Filled.RepeatOne
+                        PlayMode.RANDOM -> Icons.Filled.Shuffle
+                    },
+                    contentDescription = null, tint = TextMain
+                )
+            }
+            IconButton(onClick = { vm.prev() }) {
+                Icon(Icons.Filled.SkipPrevious, contentDescription = "上一首",
+                    tint = TextMain, modifier = Modifier.size(36.dp))
+            }
+            FilledIconButton(onClick = { vm.togglePlay() }, modifier = Modifier.size(64.dp)) {
+                Icon(
+                    if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (state.isPlaying) "暂停" else "播放",
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            IconButton(onClick = { vm.next() }) {
+                Icon(Icons.Filled.SkipNext, contentDescription = "下一首",
+                    tint = TextMain, modifier = Modifier.size(36.dp))
+            }
+            IconButton(onClick = onShowQueue) {
+                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "播放列表",
+                    tint = TextMain)
+            }
+        }
+    }
 }

@@ -123,4 +123,6 @@ dependencies {
     implementation(libs.reorderable)
     // SAF DocumentFile helper（下载目录选择）
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // Gson for saving playback state
+    implementation("com.google.code.gson:gson:2.10.1")
 }

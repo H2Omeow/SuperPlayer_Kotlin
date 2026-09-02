@@ -49,11 +49,12 @@ class UserRepository {
     }
 
     // 竖屏随机取一张壁纸，返回完整 URL；失败兜底 picsum
-    suspend fun randomWallpaper(): String {
-        val fallback = "https://picsum.photos/1080/1920?random=" +
+    suspend fun randomWallpaper(isLandscape: Boolean = false): String {
+        val orientation = if (isLandscape) "horizontal" else "vertical"
+        val fallback = "https://picsum.photos/${if (isLandscape) "1920/1080" else "1080/1920"}?random=" +
             (System.currentTimeMillis() % 100000)
         return runCatching {
-            val resp = api.wallpaperList("vertical")
+            val resp = api.wallpaperList(orientation)
             if (resp.code == 200 && resp.data.isNotEmpty()) {
                 val item = resp.data.random()
                 ApiFactory.BASE.trimEnd('/') + item.url

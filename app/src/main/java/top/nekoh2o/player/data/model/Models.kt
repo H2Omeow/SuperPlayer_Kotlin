@@ -351,5 +351,7 @@ data class AppSettings(
     // 下载目录：SAF tree URI 字符串（空串 = 默认 Music/NekoPlayer/）
     val downloadDirUri: String = "",
     // 音质选项：standard/higher/exhigh/lossless/hires/jyeffect/sky/dolby/jymaster
-    val audioQuality: String = "exhigh"
+    val audioQuality: String = "exhigh",
+    // 横屏模式：强制横屏布局（默认 false，自动检测屏幕方向）
+    val landscapeMode: Boolean = false
 )
