@@ -60,7 +60,8 @@ class MainActivity : ComponentActivity() {
 
             NekoTheme(
                 controlAlpha = state.settings.controlAlpha,
-                translucent = translucent
+                translucent = translucent,
+                uiScale = state.settings.uiScale
             ) {
                 var fullPlayer by remember { mutableStateOf(false) }
 

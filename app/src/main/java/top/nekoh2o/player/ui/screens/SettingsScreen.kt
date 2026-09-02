@@ -242,7 +242,7 @@ private fun PersonalizationSettings(vm: PlayerViewModel, s: top.nekoh2o.player.d
 
     if (s.globalBgEnabled) {
         OutlinedButton(
-            onClick = { vm.refreshWallpaper() },
+            onClick = { vm.refreshWallpaper(s.landscapeMode) },
             colors = NekoDefaults.outlinedButtonColors()
         ) { Text("刷新壁纸") }
         Column {
@@ -297,7 +297,21 @@ private fun PersonalizationSettings(vm: PlayerViewModel, s: top.nekoh2o.player.d
             style = MaterialTheme.typography.titleSmall)
         Slider(value = s.controlAlpha, onValueChange = { vm.setControlAlpha(it) },
             valueRange = 0f..1f)
-        Text("与壁纸个性化联动，值越低控件越透明",
+    }
+
+    HorizontalDivider()
+
+    Text("界面缩放", style = MaterialTheme.typography.titleMedium)
+    Column {
+        Text("UI 缩放 (${(s.uiScale * 100).toInt()}%)",
+            style = MaterialTheme.typography.titleSmall)
+        Slider(
+            value = s.uiScale,
+            onValueChange = { vm.setUiScale(it) },
+            valueRange = 0.8f..1.3f,
+            steps = 9  // 0.05 步进
+        )
+        Text("调整界面元素大小以适配小屏设备或视力需求",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

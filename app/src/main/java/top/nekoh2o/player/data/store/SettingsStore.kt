@@ -31,7 +31,8 @@ class SettingsStore(context: Context) {
         floatingLyricShowTranslation = prefs.getBoolean(KEY_FLOAT_TRANSLATION, true),
         downloadDirUri = prefs.getString(KEY_DOWNLOAD_DIR, "") ?: "",
         audioQuality = prefs.getString(KEY_AUDIO_QUALITY, "exhigh") ?: "exhigh",
-        landscapeMode = prefs.getBoolean(KEY_LANDSCAPE_MODE, false)
+        landscapeMode = prefs.getBoolean(KEY_LANDSCAPE_MODE, false),
+        uiScale = prefs.getFloat(KEY_UI_SCALE, 1.0f)
     )
 
     fun save(s: AppSettings) {
@@ -51,6 +52,7 @@ class SettingsStore(context: Context) {
             .putString(KEY_DOWNLOAD_DIR, s.downloadDirUri)
             .putString(KEY_AUDIO_QUALITY, s.audioQuality)
             .putBoolean(KEY_LANDSCAPE_MODE, s.landscapeMode)
+            .putFloat(KEY_UI_SCALE, s.uiScale)
             .apply()
     }
 
@@ -70,6 +72,7 @@ class SettingsStore(context: Context) {
         private const val KEY_DOWNLOAD_DIR = "download_dir_uri"
         private const val KEY_AUDIO_QUALITY = "audio_quality"
         private const val KEY_LANDSCAPE_MODE = "landscape_mode"
+        private const val KEY_UI_SCALE = "ui_scale"
 
         // 播放状态保存
         private const val KEY_PLAY_QUEUE = "play_queue"
@@ -87,23 +90,37 @@ class SettingsStore(context: Context) {
 
     fun savePlaybackState(queue: List<Song>, currentIndex: Int, position: Long) {
         val json = gson.toJson(queue)
+        android.util.Log.d("SettingsStore", "保存播放状态到 SharedPreferences：队列 ${queue.size} 首，JSON 长度 ${json.length}")
         prefs.edit()
             .putString(KEY_PLAY_QUEUE, json)
             .putInt(KEY_PLAY_INDEX, currentIndex)
             .putLong(KEY_PLAY_POSITION, position)
             .apply()
+        android.util.Log.d("SettingsStore", "播放状态已写入 SharedPreferences")
     }
 
     fun loadPlaybackState(): PlaybackState? {
-        val json = prefs.getString(KEY_PLAY_QUEUE, null) ?: return null
+        val json = prefs.getString(KEY_PLAY_QUEUE, null)
+        if (json == null) {
+            android.util.Log.d("SettingsStore", "SharedPreferences 中没有保存的队列")
+            return null
+        }
         val index = prefs.getInt(KEY_PLAY_INDEX, 0)
         val position = prefs.getLong(KEY_PLAY_POSITION, 0)
 
+        android.util.Log.d("SettingsStore", "从 SharedPreferences 读取播放状态：JSON 长度 ${json.length}，索引 $index，进度 $position")
         return try {
             val type = object : TypeToken<List<Song>>() {}.type
             val queue: List<Song> = gson.fromJson(json, type)
-            if (queue.isEmpty()) null else PlaybackState(queue, index, position)
+            if (queue.isEmpty()) {
+                android.util.Log.w("SettingsStore", "解析后的队列为空")
+                null
+            } else {
+                android.util.Log.d("SettingsStore", "成功解析播放状态：队列 ${queue.size} 首")
+                PlaybackState(queue, index, position)
+            }
         } catch (e: Exception) {
+            android.util.Log.e("SettingsStore", "解析播放状态失败", e)
             null
         }
     }

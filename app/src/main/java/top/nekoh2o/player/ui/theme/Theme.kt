@@ -10,7 +10,10 @@ import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 
 /** 网易云红。只作强调色用：歌词渐变、进度条、开关、收藏心形等，不用于普通文字 */
 private val Primary = Color(0xFFEC4141)
@@ -28,11 +31,13 @@ private val WhiteDivider = Color(0x33FFFFFF)  // 分割线
  * @param translucent 是否开启壁纸背景。开启后所有 surface / container 系列颜色统一按
  *   [controlAlpha] 变半透明，这样 Card、ListItem、TabRow、TopAppBar、AlertDialog、
  *   ModalBottomSheet 等所有 Material3 控件都会跟着透明，不需要在每个调用点单独改颜色。
+ * @param uiScale UI 缩放倍率（0.8 ~ 1.3），同时缩放 density 和 fontScale
  */
 @Composable
 fun NekoTheme(
     controlAlpha: Float = 1f,
     translucent: Boolean = false,
+    uiScale: Float = 1.0f,
     content: @Composable () -> Unit
 ) {
     // 始终用深色配色：全局白字需要深色底衬，浅色方案会出现白字白底不可读
@@ -59,6 +64,12 @@ fun NekoTheme(
         inverseOnSurface = White
     )
 
+    // 应用 UI 缩放：同时缩放 density 和 fontScale
+    val density = LocalDensity.current
+    val scaledDensity = remember(uiScale, density) {
+        Density(density.density * uiScale, density.fontScale * uiScale)
+    }
+
     MaterialTheme(
         colorScheme = if (translucent) base.withControlAlpha(controlAlpha) else base
     ) {
@@ -66,9 +77,13 @@ fun NekoTheme(
         // 壁纸开启时 Scaffold 的 containerColor 是 Color.Transparent，Material3 会用
         // contentColorFor(Transparent) 反推文字色，但 Transparent 不匹配任何配色，于是
         // 回退到根级 LocalContentColor（默认黑），导致直接放在 Column/Box 里的裸 Text
-        // 变黑不可见，而 Surface/Card/ListItem 内的文字仍是白色——即“部分白字”现象。
+        // 变黑不可见，而 Surface/Card/ListItem 内的文字仍是白色——即”部分白字”现象。
         // 在这里统一兜底为白色，Surface 系列仍会各自按 onSurface 覆盖，不受影响。
-        CompositionLocalProvider(LocalContentColor provides White, content = content)
+        CompositionLocalProvider(
+            LocalContentColor provides White,
+            LocalDensity provides scaledDensity,
+            content = content
+        )
     }
 }
 

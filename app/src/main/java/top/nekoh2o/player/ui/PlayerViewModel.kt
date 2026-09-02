@@ -187,7 +187,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             // 检测网易云 Cookie 有效性
             checkNcCookieValidity()
         }
-        refreshWallpaper()
+        refreshWallpaper(_ui.value.settings.landscapeMode)
 
         // 订阅下载任务实时进度 + 载入已下载列表
         viewModelScope.launch {
@@ -764,6 +764,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun setLandscapeMode(v: Boolean) {
         val s = _ui.value.settings.copy(landscapeMode = v)
         settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
+        refreshWallpaper(v)  // 切换横竖屏时立即刷新壁纸以匹配新模式
+    }
+    fun setUiScale(scale: Float) {
+        val s = _ui.value.settings.copy(uiScale = scale.coerceIn(0.8f, 1.3f))
+        settingsStore.save(s); _ui.value = _ui.value.copy(settings = s)
     }
     fun setQuality(level: String) {
         viewModelScope.launch { CookieStore.setLevel(level) }
@@ -1320,11 +1325,24 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * 恢复上次播放状态
      */
     private fun restorePlaybackState() {
-        val state = settingsStore.loadPlaybackState() ?: return
-        if (state.queue.isEmpty()) return
-        val c = controller ?: return
+        android.util.Log.d("PlayerViewModel", "开始尝试恢复播放状态")
+        val state = settingsStore.loadPlaybackState()
+        if (state == null) {
+            android.util.Log.d("PlayerViewModel", "没有保存的播放状态")
+            return
+        }
+        if (state.queue.isEmpty()) {
+            android.util.Log.w("PlayerViewModel", "保存的队列为空")
+            return
+        }
+        val c = controller
+        if (c == null) {
+            android.util.Log.e("PlayerViewModel", "恢复播放状态失败：controller 为 null")
+            return
+        }
 
         viewModelScope.launch {
+            android.util.Log.d("PlayerViewModel", "恢复播放状态：队列 ${state.queue.size} 首，索引 ${state.currentIndex}，进度 ${state.position} ms")
             // 恢复队列
             queue.clear()
             queue.addAll(state.queue)
@@ -1338,7 +1356,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             // 不自动播放，让用户手动开始
 
             syncFromController()
-            android.util.Log.d("PlayerViewModel", "已恢复播放状态：队列 ${state.queue.size} 首，位置 $safeIndex")
+            android.util.Log.d("PlayerViewModel", "播放状态恢复成功")
         }
     }
 
@@ -1346,13 +1364,22 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * 保存当前播放状态
      */
     fun saveCurrentPlaybackState() {
-        val c = controller ?: return
-        if (queue.isEmpty()) return
+        val c = controller
+        if (c == null) {
+            android.util.Log.w("PlayerViewModel", "保存播放状态失败：controller 为 null")
+            return
+        }
+        if (queue.isEmpty()) {
+            android.util.Log.w("PlayerViewModel", "保存播放状态跳过：队列为空")
+            return
+        }
 
         val currentIndex = c.currentMediaItemIndex.coerceAtLeast(0)
         val position = c.currentPosition.coerceAtLeast(0)
 
+        android.util.Log.d("PlayerViewModel", "正在保存播放状态：队列 ${queue.size} 首，索引 $currentIndex，进度 $position ms")
         settingsStore.savePlaybackState(queue.toList(), currentIndex, position)
+        android.util.Log.d("PlayerViewModel", "播放状态已保存")
     }
 
     override fun onCleared() {
