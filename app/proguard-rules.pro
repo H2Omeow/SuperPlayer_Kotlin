@@ -23,3 +23,12 @@
 # ===== kotlinx.serialization 运行时 =====
 -keepclassmembers class kotlinx.serialization.json.** { *; }
 -dontwarn kotlinx.serialization.**
+
+# ===== Gson：保留泛型签名和数据类，否则 TypeToken 无法反序列化 =====
+-keepattributes Signature
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
+-keep class com.google.gson.** { *; }
+# 播放状态保存使用 Gson 序列化 List<Song>，必须保留 Song 的所有字段
+-keep class top.nekoh2o.player.data.model.Song { *; }
+-keep class top.nekoh2o.player.data.model.BgSource { *; }
