@@ -21,10 +21,8 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
     val settings = state.settings.audioEffects
 
     Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // 音效引擎选择
         Text("音效引擎", style = MaterialTheme.typography.titleMedium)
