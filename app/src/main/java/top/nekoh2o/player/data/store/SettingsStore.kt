@@ -36,7 +36,8 @@ class SettingsStore(context: Context) {
         landscapeMode = prefs.getBoolean(KEY_LANDSCAPE_MODE, false),
         uiScale = prefs.getFloat(KEY_UI_SCALE, 1.0f),
         audioEffects = AudioEffectSettings(
-            engine = AudioEffectEngine.entries[prefs.getInt(KEY_AUDIO_ENGINE, 0)],
+            engine = AudioEffectEngine.entries.getOrNull(prefs.getInt(KEY_AUDIO_ENGINE, 0))
+                ?: AudioEffectEngine.NONE,
             eqBands = prefs.getString(KEY_EQ_BANDS, null)?.split(",")
                 ?.mapNotNull { it.toFloatOrNull() } ?: List(10) { 0f },
             eqPresetName = prefs.getString(KEY_EQ_PRESET, "") ?: "",
