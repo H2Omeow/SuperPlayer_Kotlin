@@ -1,6 +1,6 @@
 name: Release
 
-# 推送 v 开头的 tag（如 v1.0.3）时自动构建签名 APK 并发布 Release。
+# 推送 v 开头的 tag（如 v1.0.8-pre）时自动构建签名 APK 并发布 Release。
 # 需要在仓库 Settings → Secrets and variables → Actions 配置 4 个 secret：
 #   KEYSTORE_BASE64   —— release keystore 的 base64（见 nekoplayer-release.jks.b64）
 #   KEYSTORE_PASSWORD —— keystore 密码
@@ -29,6 +29,11 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Install NDK
+        run: |
+          echo "y" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
+          echo "NDK installed at: ${ANDROID_HOME}/ndk/26.1.10909125"
 
       - name: Decode keystore
         env:

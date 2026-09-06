@@ -12,3 +12,4 @@ nano.*.save
 .aider.chat.history.md
 .aider.input.history
 .aider*
+app/.cxx/

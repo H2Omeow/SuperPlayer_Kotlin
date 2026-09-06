@@ -44,6 +44,10 @@ android {
         targetSdk = 34
         versionCode = buildVersionCode
         versionName = buildVersionName
+
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
     }
 
     // 正式签名：CI 通过环境变量注入。本地无这些变量时 release 走 debug 签名，
@@ -81,6 +85,12 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }

@@ -5,15 +5,22 @@ import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.RenderersFactory
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.MediaCodecAudioRenderer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlinx.coroutines.runBlocking
+import top.nekoh2o.player.audio.NativeAudioProcessor
 import top.nekoh2o.player.audio.SystemAudioEffectsManager
 import top.nekoh2o.player.data.cache.MusicCache
 import top.nekoh2o.player.data.model.AudioEffectEngine
@@ -21,6 +28,8 @@ import top.nekoh2o.player.data.model.AudioEffectSettings
 import top.nekoh2o.player.data.repo.DownloadIndex
 import top.nekoh2o.player.data.repo.MusicRepository
 import top.nekoh2o.player.data.store.SettingsStore
+import android.os.Handler
+import android.os.Looper
 import java.io.File
 
 @UnstableApi
@@ -29,6 +38,7 @@ class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val repo = MusicRepository()
     private var audioEffectsManager: SystemAudioEffectsManager? = null
+    private var nativeAudioProcessor: NativeAudioProcessor? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -84,6 +94,7 @@ class PlaybackService : MediaSessionService() {
         }
 
         val player = ExoPlayer.Builder(this)
+            .setRenderersFactory(createRenderersFactory())
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(resolvingFactory)
             )
@@ -101,13 +112,51 @@ class PlaybackService : MediaSessionService() {
 
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY && audioEffectsManager == null) {
+                if (playbackState == Player.STATE_READY && audioEffectsManager == null && nativeAudioProcessor == null) {
                     initAudioEffects(player.audioSessionId)
                 }
             }
         })
 
         mediaSession = MediaSession.Builder(this, player).build()
+    }
+
+    private fun createRenderersFactory(): RenderersFactory {
+        return RenderersFactory { eventHandler, videoRendererEventListener, audioRendererEventListener, textRendererOutput, metadataRendererOutput ->
+            val settings = SettingsStore(this).load()
+
+            // 根据音效引擎配置创建 AudioProcessor
+            val audioProcessors = if (settings.audioEffects.engine == AudioEffectEngine.NATIVE_CPP) {
+                val processor = NativeAudioProcessor()
+                nativeAudioProcessor = processor
+                arrayOf<AudioProcessor>(processor)
+            } else {
+                emptyArray()
+            }
+
+            // 创建带自定义 AudioProcessor 的 AudioSink
+            val audioSink = DefaultAudioSink.Builder(this)
+                .setAudioProcessors(audioProcessors)
+                .build()
+
+            arrayOf(
+                MediaCodecVideoRenderer(
+                    this,
+                    MediaCodecSelector.DEFAULT,
+                    50000L,
+                    eventHandler,
+                    videoRendererEventListener,
+                    50
+                ),
+                MediaCodecAudioRenderer(
+                    this,
+                    MediaCodecSelector.DEFAULT,
+                    eventHandler,
+                    audioRendererEventListener,
+                    audioSink
+                )
+            )
+        }
     }
 
     private fun normalizeReadableUri(raw: String): Uri? {
@@ -133,11 +182,20 @@ class PlaybackService : MediaSessionService() {
 
     private fun initAudioEffects(audioSessionId: Int) {
         val settings = SettingsStore(this).load()
-        if (settings.audioEffects.engine == AudioEffectEngine.SYSTEM) {
-            audioEffectsManager = SystemAudioEffectsManager(audioSessionId).apply {
-                if (initialize()) {
-                    applySettings(settings.audioEffects)
+        when (settings.audioEffects.engine) {
+            AudioEffectEngine.SYSTEM -> {
+                audioEffectsManager = SystemAudioEffectsManager(audioSessionId).apply {
+                    if (initialize()) {
+                        applySettings(settings.audioEffects)
+                    }
                 }
+            }
+            AudioEffectEngine.NATIVE_CPP -> {
+                // Native 音效在 createRenderersFactory 中已初始化
+                nativeAudioProcessor?.applySettings(settings.audioEffects)
+            }
+            AudioEffectEngine.NONE -> {
+                // 不启用任何音效
             }
         }
     }
@@ -147,8 +205,12 @@ class PlaybackService : MediaSessionService() {
             AudioEffectEngine.NONE -> {
                 audioEffectsManager?.release()
                 audioEffectsManager = null
+                nativeAudioProcessor = null
+                // 需要重新创建 player 以移除 AudioProcessor
+                recreatePlayerWithNewSettings(settings)
             }
             AudioEffectEngine.SYSTEM -> {
+                nativeAudioProcessor = null
                 val sessionId = (mediaSession?.player as? ExoPlayer)?.audioSessionId ?: return
                 if (audioEffectsManager == null) {
                     audioEffectsManager = SystemAudioEffectsManager(sessionId).apply {
@@ -158,12 +220,99 @@ class PlaybackService : MediaSessionService() {
                 audioEffectsManager?.applySettings(settings)
             }
             AudioEffectEngine.NATIVE_CPP -> {
-                // 暂不支持 Native 音效，需要更复杂的 AudioProcessor 集成
-                // TODO: 实现 NativeAudioProcessor 并注入到 ExoPlayer
                 audioEffectsManager?.release()
                 audioEffectsManager = null
+
+                // 如果已有 Native 处理器，直接应用设置
+                if (nativeAudioProcessor != null) {
+                    nativeAudioProcessor?.applySettings(settings)
+                } else {
+                    // 否则需要重新创建 player
+                    recreatePlayerWithNewSettings(settings)
+                }
             }
         }
+    }
+
+    private fun recreatePlayerWithNewSettings(settings: AudioEffectSettings) {
+        val currentPlayer = mediaSession?.player as? ExoPlayer ?: return
+
+        // 保存当前播放状态
+        val currentMediaItems = mutableListOf<androidx.media3.common.MediaItem>()
+        for (i in 0 until currentPlayer.mediaItemCount) {
+            currentMediaItems.add(currentPlayer.getMediaItemAt(i))
+        }
+        val currentIndex = currentPlayer.currentMediaItemIndex
+        val currentPosition = currentPlayer.currentPosition
+        val playWhenReady = currentPlayer.playWhenReady
+
+        // 释放旧 player
+        currentPlayer.release()
+
+        // 保存引擎设置到 Store（避免 createRenderersFactory 读取旧值）
+        SettingsStore(this).save(SettingsStore(this).load().copy(audioEffects = settings))
+
+        // 重新创建 player
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent("NekoPlayer/1.0")
+            .setAllowCrossProtocolRedirects(true)
+        val localAndHttpFactory = DefaultDataSource.Factory(this, httpFactory)
+        val cacheFactory = MusicCache.dataSourceFactory(localAndHttpFactory)
+        val settingsStore = SettingsStore(this)
+        val resolvingFactory = ResolvingDataSource.Factory(cacheFactory) { dataSpec ->
+            val raw = dataSpec.uri.toString()
+            if (!raw.startsWith("neko:")) return@Factory dataSpec
+            val id = raw.removePrefix("neko:").toLongOrNull() ?: return@Factory dataSpec
+            val key = MusicCache.cacheKeyForSong(id)
+            DownloadIndex.get(id)?.let { downloaded ->
+                normalizeReadableUri(downloaded.audioUri)?.let { localUri ->
+                    return@Factory dataSpec.buildUpon().setUri(localUri).setKey("download:$id").build()
+                }
+            }
+            if (settingsStore.load().cacheEnabled && MusicCache.isFullyCached(key)) {
+                return@Factory dataSpec.buildUpon().setKey(key).build()
+            }
+            val realUrl = runCatching { runBlocking { repo.resolvePlayUrl(id) } }.getOrNull()
+            if (realUrl != null) {
+                val builder = dataSpec.buildUpon().setUri(Uri.parse(realUrl)).setKey(key)
+                if (!settingsStore.load().cacheEnabled) {
+                    builder.setFlags(dataSpec.flags or androidx.media3.datasource.DataSpec.FLAG_DONT_CACHE_IF_LENGTH_UNKNOWN)
+                }
+                builder.build()
+            } else {
+                dataSpec.buildUpon().setKey(key).build()
+            }
+        }
+
+        val newPlayer = ExoPlayer.Builder(this)
+            .setRenderersFactory(createRenderersFactory())
+            .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingFactory))
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                true
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .build()
+
+        newPlayer.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY && audioEffectsManager == null && nativeAudioProcessor == null) {
+                    initAudioEffects(newPlayer.audioSessionId)
+                }
+            }
+        })
+
+        // 恢复播放状态
+        newPlayer.setMediaItems(currentMediaItems, currentIndex, currentPosition)
+        newPlayer.playWhenReady = playWhenReady
+        newPlayer.prepare()
+
+        // 更新 MediaSession
+        mediaSession?.player = newPlayer
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -209,6 +358,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         audioEffectsManager?.release()
         audioEffectsManager = null
+        nativeAudioProcessor = null
         mediaSession?.run {
             player.release()
             release()
