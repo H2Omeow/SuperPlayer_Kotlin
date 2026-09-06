@@ -4,6 +4,8 @@ import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import top.nekoh2o.player.data.model.AppSettings
+import top.nekoh2o.player.data.model.AudioEffectEngine
+import top.nekoh2o.player.data.model.AudioEffectSettings
 import top.nekoh2o.player.data.model.BgSource
 import top.nekoh2o.player.data.model.Song
 
@@ -32,7 +34,19 @@ class SettingsStore(context: Context) {
         downloadDirUri = prefs.getString(KEY_DOWNLOAD_DIR, "") ?: "",
         audioQuality = prefs.getString(KEY_AUDIO_QUALITY, "exhigh") ?: "exhigh",
         landscapeMode = prefs.getBoolean(KEY_LANDSCAPE_MODE, false),
-        uiScale = prefs.getFloat(KEY_UI_SCALE, 1.0f)
+        uiScale = prefs.getFloat(KEY_UI_SCALE, 1.0f),
+        audioEffects = AudioEffectSettings(
+            engine = AudioEffectEngine.entries[prefs.getInt(KEY_AUDIO_ENGINE, 0)],
+            eqBands = prefs.getString(KEY_EQ_BANDS, null)?.split(",")
+                ?.mapNotNull { it.toFloatOrNull() } ?: List(10) { 0f },
+            eqPresetName = prefs.getString(KEY_EQ_PRESET, "") ?: "",
+            bassBoost = prefs.getInt(KEY_BASS_BOOST, 0),
+            virtualizer = prefs.getInt(KEY_VIRTUALIZER, 0),
+            reverbWet = prefs.getInt(KEY_REVERB_WET, 0),
+            reverbRoomSize = prefs.getInt(KEY_REVERB_ROOM, 50),
+            reverbDamping = prefs.getInt(KEY_REVERB_DAMP, 30),
+            loudnessGain = prefs.getInt(KEY_LOUDNESS, 0)
+        )
     )
 
     fun save(s: AppSettings) {
@@ -53,6 +67,15 @@ class SettingsStore(context: Context) {
             .putString(KEY_AUDIO_QUALITY, s.audioQuality)
             .putBoolean(KEY_LANDSCAPE_MODE, s.landscapeMode)
             .putFloat(KEY_UI_SCALE, s.uiScale)
+            .putInt(KEY_AUDIO_ENGINE, s.audioEffects.engine.value)
+            .putString(KEY_EQ_BANDS, s.audioEffects.eqBands.joinToString(","))
+            .putString(KEY_EQ_PRESET, s.audioEffects.eqPresetName)
+            .putInt(KEY_BASS_BOOST, s.audioEffects.bassBoost)
+            .putInt(KEY_VIRTUALIZER, s.audioEffects.virtualizer)
+            .putInt(KEY_REVERB_WET, s.audioEffects.reverbWet)
+            .putInt(KEY_REVERB_ROOM, s.audioEffects.reverbRoomSize)
+            .putInt(KEY_REVERB_DAMP, s.audioEffects.reverbDamping)
+            .putInt(KEY_LOUDNESS, s.audioEffects.loudnessGain)
             .apply()
     }
 
@@ -73,6 +96,15 @@ class SettingsStore(context: Context) {
         private const val KEY_AUDIO_QUALITY = "audio_quality"
         private const val KEY_LANDSCAPE_MODE = "landscape_mode"
         private const val KEY_UI_SCALE = "ui_scale"
+        private const val KEY_AUDIO_ENGINE = "audio_engine"
+        private const val KEY_EQ_BANDS = "eq_bands"
+        private const val KEY_EQ_PRESET = "eq_preset"
+        private const val KEY_BASS_BOOST = "bass_boost"
+        private const val KEY_VIRTUALIZER = "virtualizer"
+        private const val KEY_REVERB_WET = "reverb_wet"
+        private const val KEY_REVERB_ROOM = "reverb_room_size"
+        private const val KEY_REVERB_DAMP = "reverb_damping"
+        private const val KEY_LOUDNESS = "loudness_gain"
 
         // 播放状态保存
         private const val KEY_PLAY_QUEUE = "play_queue"

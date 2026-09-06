@@ -355,5 +355,7 @@ data class AppSettings(
     // 横屏模式：强制横屏布局（默认 false，自动检测屏幕方向）
     val landscapeMode: Boolean = false,
     // UI 缩放：0.8x（放大文字）~ 1.3x（缩小内容），适配小屏设备
-    val uiScale: Float = 1.0f
+    val uiScale: Float = 1.0f,
+    // 音效设置
+    val audioEffects: AudioEffectSettings = AudioEffectSettings()
 )

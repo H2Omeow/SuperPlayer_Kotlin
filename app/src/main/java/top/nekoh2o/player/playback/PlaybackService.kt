@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
@@ -13,7 +14,10 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlinx.coroutines.runBlocking
+import top.nekoh2o.player.audio.SystemAudioEffectsManager
 import top.nekoh2o.player.data.cache.MusicCache
+import top.nekoh2o.player.data.model.AudioEffectEngine
+import top.nekoh2o.player.data.model.AudioEffectSettings
 import top.nekoh2o.player.data.repo.DownloadIndex
 import top.nekoh2o.player.data.repo.MusicRepository
 import top.nekoh2o.player.data.store.SettingsStore
@@ -24,6 +28,7 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private val repo = MusicRepository()
+    private var audioEffectsManager: SystemAudioEffectsManager? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -94,6 +99,14 @@ class PlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
 
+        player.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY && audioEffectsManager == null) {
+                    initAudioEffects(player.audioSessionId)
+                }
+            }
+        })
+
         mediaSession = MediaSession.Builder(this, player).build()
     }
 
@@ -118,6 +131,66 @@ class PlaybackService : MediaSessionService() {
         }.getOrNull()
     }
 
+    private fun initAudioEffects(audioSessionId: Int) {
+        val settings = SettingsStore(this).load()
+        if (settings.audioEffects.engine == AudioEffectEngine.SYSTEM) {
+            audioEffectsManager = SystemAudioEffectsManager(audioSessionId).apply {
+                if (initialize()) {
+                    applySettings(settings.audioEffects)
+                }
+            }
+        }
+    }
+
+    private fun updateAudioEffects(settings: AudioEffectSettings) {
+        when (settings.engine) {
+            AudioEffectEngine.NONE -> {
+                audioEffectsManager?.release()
+                audioEffectsManager = null
+            }
+            AudioEffectEngine.SYSTEM -> {
+                val sessionId = (mediaSession?.player as? ExoPlayer)?.audioSessionId ?: return
+                if (audioEffectsManager == null) {
+                    audioEffectsManager = SystemAudioEffectsManager(sessionId).apply {
+                        initialize()
+                    }
+                }
+                audioEffectsManager?.applySettings(settings)
+            }
+            AudioEffectEngine.NATIVE_CPP -> {
+                // 暂不支持 Native 音效，需要更复杂的 AudioProcessor 集成
+                // TODO: 实现 NativeAudioProcessor 并注入到 ExoPlayer
+                audioEffectsManager?.release()
+                audioEffectsManager = null
+            }
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "top.nekoh2o.player.ACTION_UPDATE_AUDIO_EFFECTS") {
+            handleAudioEffectsUpdate(intent)
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    private fun handleAudioEffectsUpdate(intent: Intent) {
+        val engineValue = intent.getIntExtra("engine", 0)
+        val engine = AudioEffectEngine.entries.getOrNull(engineValue) ?: return
+
+        val settings = AudioEffectSettings(
+            engine = engine,
+            eqBands = intent.getFloatArrayExtra("eq_bands")?.toList() ?: List(10) { 0f },
+            bassBoost = intent.getIntExtra("bass_boost", 0),
+            virtualizer = intent.getIntExtra("virtualizer", 0),
+            reverbWet = intent.getIntExtra("reverb_wet", 0),
+            reverbRoomSize = intent.getIntExtra("reverb_room_size", 50),
+            reverbDamping = intent.getIntExtra("reverb_damping", 30),
+            loudnessGain = intent.getIntExtra("loudness_gain", 0)
+        )
+
+        updateAudioEffects(settings)
+    }
+
     override fun onGetSession(
         controllerInfo: MediaSession.ControllerInfo
     ): MediaSession? = mediaSession
@@ -134,6 +207,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        audioEffectsManager?.release()
+        audioEffectsManager = null
         mediaSession?.run {
             player.release()
             release()

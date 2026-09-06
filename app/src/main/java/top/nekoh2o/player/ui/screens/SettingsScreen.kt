@@ -97,6 +97,11 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 onClick = { showCategory = SettingsCategory.PERSONALIZATION }
             )
             SettingsCategoryItem(
+                title = "音效设置",
+                description = "均衡器、低音增强、3D 环绕、混响",
+                onClick = { showCategory = SettingsCategory.AUDIO_EFFECTS }
+            )
+            SettingsCategoryItem(
                 title = "播放与歌词",
                 description = "音质、悬浮歌词显示选项",
                 onClick = { showCategory = SettingsCategory.PLAYBACK }
@@ -121,7 +126,7 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 }
 
 enum class SettingsCategory {
-    PERSONALIZATION, PLAYBACK, STORAGE, ACCOUNT, ADVANCED
+    PERSONALIZATION, AUDIO_EFFECTS, PLAYBACK, STORAGE, ACCOUNT, ADVANCED
 }
 
 @Composable
@@ -194,6 +199,7 @@ private fun SettingsCategoryScreen(
         ) {
             when (category) {
                 SettingsCategory.PERSONALIZATION -> PersonalizationSettings(vm, s)
+                SettingsCategory.AUDIO_EFFECTS -> AudioEffectsSettingsContent(vm)
                 SettingsCategory.PLAYBACK -> PlaybackSettings(vm, state, s)
                 SettingsCategory.STORAGE -> StorageSettings(vm, s, context, onOpenCacheManager, onOpenDownloadManager)
                 SettingsCategory.ACCOUNT -> AccountSettings(vm, onOpenCookieManager)
@@ -205,6 +211,7 @@ private fun SettingsCategoryScreen(
 
 private fun getCategoryTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.PERSONALIZATION -> "个性化设置"
+    SettingsCategory.AUDIO_EFFECTS -> "音效设置"
     SettingsCategory.PLAYBACK -> "播放与歌词"
     SettingsCategory.STORAGE -> "下载与存储"
     SettingsCategory.ACCOUNT -> "账户信息"

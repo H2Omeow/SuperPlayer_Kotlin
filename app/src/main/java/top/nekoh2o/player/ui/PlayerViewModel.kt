@@ -21,10 +21,13 @@ import top.nekoh2o.player.data.cache.MusicCache
 import top.nekoh2o.player.data.model.AlbumItem
 import top.nekoh2o.player.data.model.AppSettings
 import top.nekoh2o.player.data.model.ArtistItem
+import top.nekoh2o.player.data.model.AudioEffectEngine
+import top.nekoh2o.player.data.model.AudioEffectSettings
 import top.nekoh2o.player.data.model.BgSource
 import top.nekoh2o.player.data.model.CachedItem
 import top.nekoh2o.player.data.model.DownloadTask
 import top.nekoh2o.player.data.model.DownloadedSong
+import top.nekoh2o.player.data.model.EQPresets
 import top.nekoh2o.player.data.model.LyricLine
 import top.nekoh2o.player.data.model.PersonalizedItem
 import top.nekoh2o.player.data.model.Playlist
@@ -1291,6 +1294,95 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         android.util.Log.d("PlayerViewModel", "正在保存播放状态：队列 ${queue.size} 首，索引 $currentIndex，进度 $position ms")
         settingsStore.savePlaybackState(queue.toList(), currentIndex, position)
         android.util.Log.d("PlayerViewModel", "播放状态已保存")
+    }
+
+    fun setAudioEffectEngine(engine: AudioEffectEngine) {
+        viewModelScope.launch {
+            val updated = _ui.value.settings.copy(
+                audioEffects = _ui.value.settings.audioEffects.copy(engine = engine)
+            )
+            settingsStore.save(updated)
+            _ui.value = _ui.value.copy(settings = updated)
+            notifyAudioEffectsChanged(updated.audioEffects)
+        }
+    }
+
+    fun setEqBands(bands: List<Float>) {
+        viewModelScope.launch {
+            val updated = _ui.value.settings.copy(
+                audioEffects = _ui.value.settings.audioEffects.copy(
+                    eqBands = bands,
+                    eqPresetName = ""
+                )
+            )
+            settingsStore.save(updated)
+            _ui.value = _ui.value.copy(settings = updated)
+            notifyAudioEffectsChanged(updated.audioEffects)
+        }
+    }
+
+    fun setEqPreset(presetName: String) {
+        viewModelScope.launch {
+            val bands = EQPresets.presets[presetName] ?: return@launch
+            val updated = _ui.value.settings.copy(
+                audioEffects = _ui.value.settings.audioEffects.copy(
+                    eqBands = bands,
+                    eqPresetName = presetName
+                )
+            )
+            settingsStore.save(updated)
+            _ui.value = _ui.value.copy(settings = updated)
+            notifyAudioEffectsChanged(updated.audioEffects)
+        }
+    }
+
+    fun setBassBoost(strength: Int) {
+        updateAudioEffect { it.copy(bassBoost = strength.coerceIn(0, 100)) }
+    }
+
+    fun setVirtualizer(strength: Int) {
+        updateAudioEffect { it.copy(virtualizer = strength.coerceIn(0, 100)) }
+    }
+
+    fun setReverbWet(wet: Int) {
+        updateAudioEffect { it.copy(reverbWet = wet.coerceIn(0, 100)) }
+    }
+
+    fun setReverbRoomSize(size: Int) {
+        updateAudioEffect { it.copy(reverbRoomSize = size.coerceIn(0, 100)) }
+    }
+
+    fun setReverbDamping(damping: Int) {
+        updateAudioEffect { it.copy(reverbDamping = damping.coerceIn(0, 100)) }
+    }
+
+    fun setLoudnessGain(gain: Int) {
+        updateAudioEffect { it.copy(loudnessGain = gain.coerceIn(0, 100)) }
+    }
+
+    private fun updateAudioEffect(transform: (AudioEffectSettings) -> AudioEffectSettings) {
+        viewModelScope.launch {
+            val newEffects = transform(_ui.value.settings.audioEffects)
+            val updated = _ui.value.settings.copy(audioEffects = newEffects)
+            settingsStore.save(updated)
+            _ui.value = _ui.value.copy(settings = updated)
+            notifyAudioEffectsChanged(newEffects)
+        }
+    }
+
+    private fun notifyAudioEffectsChanged(effects: AudioEffectSettings) {
+        val intent = Intent(getApplication<Application>(), PlaybackService::class.java).apply {
+            action = "top.nekoh2o.player.ACTION_UPDATE_AUDIO_EFFECTS"
+            putExtra("engine", effects.engine.value)
+            putExtra("eq_bands", effects.eqBands.toFloatArray())
+            putExtra("bass_boost", effects.bassBoost)
+            putExtra("virtualizer", effects.virtualizer)
+            putExtra("reverb_wet", effects.reverbWet)
+            putExtra("reverb_room_size", effects.reverbRoomSize)
+            putExtra("reverb_damping", effects.reverbDamping)
+            putExtra("loudness_gain", effects.loudnessGain)
+        }
+        getApplication<Application>().startService(intent)
     }
 
     override fun onCleared() {
