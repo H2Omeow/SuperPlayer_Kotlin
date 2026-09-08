@@ -1,4 +1,4 @@
-# SuperPlayer / NekoPlayer 音效排查规格与进度
+# SuperPlayer 音效技术规格与验证状态
 
 ## 目标与范围
 
@@ -20,14 +20,30 @@
 - [x] 声明 session 0 辅助混响所需的普通权限 MODIFY_AUDIO_SETTINGS。
 - [x] 预设/混合比例持久化与 Intent 接线，非法旧设置归一化，一次性重置全部参数。
 - [x] 补充文档 16 个 EQ 预设，保留原有 5 个通用预设，共 21 个。
-- [x] 实现文档第 6 章签名系列 20 组：惜 5、次元 10、跨界 5。
+- [x] 按参考参数表接入签名系列 20 组：惜 5、次元 10、跨界 5；原实现一致性仍待核对。
+
+## 实现入口
+
+| 文件 | 职责 |
+|---|---|
+| `app/src/main/java/top/nekoh2o/player/audio/NativeAudioProcessor.kt` | Media3 PCM 缓冲区与处理器生命周期 |
+| `app/src/main/java/top/nekoh2o/player/audio/NativeAudioEffectsController.kt` | JNI 接口与参数传递 |
+| `app/src/main/cpp/native-audio-effects.cpp` | Native 实例创建、输入校验与释放 |
+| `app/src/main/cpp/audio-engine.h` | 实时 DSP 调度与混合 |
+| `app/src/main/cpp/audio-dsp.h` | 基础滤波器 |
+| `app/src/main/cpp/reverb.h` | 混响延迟线 |
+| `app/src/main/cpp/signature-chain.h` | 签名母带处理链 |
+| `app/src/main/cpp/signature-presets.h` | 20 组签名母带参数 |
+
+JNI 使用 `nativeCreate`、`nativeConfigure`、`nativeProcess`、`nativeReset`、`nativeRelease`。
+调用以实例句柄为边界；PCM 通过直接 ByteBuffer 传入，状态仅由播放线程访问。
 
 ## 预设能力与限制
 
 | 范围 | 当前状态 | 后续 |
 |---|---|---|
 | EQ 21 组 | 已接入；系统需实际支持均衡器 | 真机频段映射回归 |
-| 签名母带 20 组，应用 ID 15..34 | 按文档参数与描述实现完整串联链，可选 | 获取源码后逐项核对公式与听感 |
+| 签名母带 20 组，应用 ID 15..34 | 已接入滤波、压缩、饱和、声场与采样峰值保护，可选 | 获取源码后逐项核对公式与听感 |
 | 基础母带 6 组，应用 ID 1..6 | 仅保留目录定义，不向用户提供可选入口 | 接入原始独立处理链 |
 | 声境母带 8 组，应用 ID 7..14 | 仅保留目录定义，不向用户提供可选入口 | 接入原始共享链与参数 |
 
@@ -46,9 +62,10 @@
 - 前视限幅的完整延迟、排空与声道联动契约。
 - 高频恢复与空间渲染的完整滤波器/延迟线状态更新。
 
-## 源码依赖
+## 待补充的参考源码
 
-以下文件必须来自同一版本的 `app/src/main/cpp/`：
+以下是用于核对预设和接入剩余 14 组母带的外部参考源码，**不是编译当前项目所缺的文件**。
+文件应来自同一版本的参考实现 `app/src/main/cpp/`：
 
 ```text
 CMakeLists.txt
@@ -71,8 +88,8 @@ shengjing-master-wuxia.cpp
 ```
 
 同时需要 `player/CiyuanxiNativeAudioEffectController.kt`，以及上述文件实际依赖的其他本地头文件/DSP 实现。
-文档不足以穷举传递依赖，提供完整的音频 DSP 源码目录可避免遗漏。
-当前不需要离线导出源文件、历史 `.bak` 文件或签名协议中的凭据。
+参考参数表不足以穷举传递依赖，需同时包含所引用的本地 DSP 文件。
+离线导出源文件与历史 `.bak` 文件不属于实时处理范围。
 
 ## 验证进度
 
