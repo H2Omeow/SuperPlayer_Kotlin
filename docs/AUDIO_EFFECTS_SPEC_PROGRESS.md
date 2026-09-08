@@ -1,14 +1,10 @@
 # SuperPlayer / NekoPlayer 音效排查规格与进度
 
-## 来源与授权
+## 目标与范围
 
-- 会话：`~/.claude/projects/-home-h2o/b86b8583-d2ac-40c6-9c20-d7da61fad7e9.jsonl`。
-- 原规格：2026-09-09 00:52（北京时间）；用户于 00:54 明确授权，并于 01:18 要求继续。
-- 任务：修复专业音效无法播放，核对文档预设，按实际引擎能力显示控制项。
-- 2026-09-09 接续：历史最后停在 JNI / DSP / 服务 / UI 未完成接线的状态。
-- 用户确认目前只有参数文档，会另行索取原始 C++ 源码。
-- 不创建子 Agent；不包含离线导出、真实 AI 推理。
-- 后续用户明确授权：完成验证后提交并推送 GitHub，覆盖 `v1.0.8-pre`，更新 README 与指定项目致谢。
+- 修复专业音效播放链，核对预设参数，按实际引擎能力显示控制项。
+- 实现范围为实时音效，不包含离线导出或真实 AI 推理。
+- 已实现链路与待接入链路分别列出；缺少完整算法定义的预设暂不开放。
 
 ## 已完成的实现
 
@@ -50,7 +46,7 @@
 - 前视限幅的完整延迟、排空与声道联动契约。
 - 高频恢复与空间渲染的完整滤波器/延迟线状态更新。
 
-## 需索取的源码
+## 源码依赖
 
 以下文件必须来自同一版本的 `app/src/main/cpp/`：
 
@@ -84,12 +80,12 @@ shengjing-master-wuxia.cpp
 - [x] JNI 主机测试：真实动态库符号、容量边界、单/双声道与释放；另用 javap 核对实际 Kotlin native 方法描述符。
 - [x] JVM 回归 9 项全部通过：缓冲区位置、EOS、flush/reset、格式切换、引擎旁路、JNI 失败恢复、旧设置归一化。
 - [x] 最终 debug 构建与 lint 通过；lint 仍有仓库其他模块的警告。
-- [x] Release 构建与 JNI 保留规则核验；首次 daemon 意外退出后，以单 worker、1GB JVM 堆重试成功。
-- [ ] 真机：当前无连接设备，尚未确认专业音效实际播放恢复。
+- [x] Release 构建与 JNI 保留规则核验通过。
+- [ ] 真机播放与设备兼容性验收。
 
 ## 下一步
 
-收到源码后先核对签名链，再接入基础/声境链；处理前视延迟与 EOS 后才开放相应预设。
+后续实现依赖原始源码：先核对签名链，再接入基础/声境链；处理前视延迟与 EOS 后才开放相应预设。
 真机验收覆盖：启动时选择不同引擎、播放中反复切换、seek/切歌/自然结束、蓝牙与耳机切换、设置恢复、系统不支持项隐藏。
 
 ## 复现验证
@@ -107,10 +103,10 @@ g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Iapp
 /tmp/neko-audio-engine-test
 ```
 
-Linux 主机 JNI 检查（将 JDK include 路径替换为本机安装位置）：
+Linux 主机 JNI 检查（JAVA_HOME 指向本机 JDK 安装目录）：
 
 ```sh
-g++ -std=c++17 -O2 -shared -fPIC -I/usr/lib/jvm/zulu-21-amd64/include -I/usr/lib/jvm/zulu-21-amd64/include/linux -Iapp/src/main/cpp app/src/main/cpp/native-audio-effects.cpp -o /tmp/libneko-jni-test.so
+g++ -std=c++17 -O2 -shared -fPIC -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" -Iapp/src/main/cpp app/src/main/cpp/native-audio-effects.cpp -o /tmp/libneko-jni-test.so
 javac -d /tmp/neko-jni-tests app/src/test/cpp/NativeAudioEffectsController.java
 java -cp /tmp/neko-jni-tests top.nekoh2o.player.audio.NativeAudioEffectsController /tmp/libneko-jni-test.so
 ```
