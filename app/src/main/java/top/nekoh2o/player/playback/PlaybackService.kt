@@ -3,6 +3,7 @@ package top.nekoh2o.player.playback
 import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.AuxEffectInfo
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.audio.AudioProcessor
@@ -39,6 +40,7 @@ class PlaybackService : MediaSessionService() {
     private val repo = MusicRepository()
     private var audioEffectsManager: SystemAudioEffectsManager? = null
     private var nativeAudioProcessor: NativeAudioProcessor? = null
+    private var effectsSessionId = C.AUDIO_SESSION_ID_UNSET
 
     override fun onCreate() {
         super.onCreate()
@@ -111,8 +113,12 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         player.addListener(object : Player.Listener {
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                initAudioEffects(audioSessionId)
+            }
+
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY && audioEffectsManager == null && nativeAudioProcessor == null) {
+                if (playbackState == Player.STATE_READY && audioEffectsManager == null) {
                     initAudioEffects(player.audioSessionId)
                 }
             }
@@ -125,14 +131,11 @@ class PlaybackService : MediaSessionService() {
         return RenderersFactory { eventHandler, videoRendererEventListener, audioRendererEventListener, textRendererOutput, metadataRendererOutput ->
             val settings = SettingsStore(this).load()
 
-            // 根据音效引擎配置创建 AudioProcessor
-            val audioProcessors = if (settings.audioEffects.engine == AudioEffectEngine.NATIVE_CPP) {
-                val processor = NativeAudioProcessor()
-                nativeAudioProcessor = processor
-                arrayOf<AudioProcessor>(processor)
-            } else {
-                emptyArray()
-            }
+            // Native processor 常驻为透明旁路，运行时切换引擎无需销毁播放器。
+            val processor = NativeAudioProcessor()
+            nativeAudioProcessor = processor
+            processor.applySettings(settings.audioEffects)
+            val audioProcessors = arrayOf<AudioProcessor>(processor)
 
             // 创建带自定义 AudioProcessor 的 AudioSink
             val audioSink = DefaultAudioSink.Builder(this)
@@ -181,139 +184,43 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun initAudioEffects(audioSessionId: Int) {
-        val settings = SettingsStore(this).load()
-        when (settings.audioEffects.engine) {
-            AudioEffectEngine.SYSTEM -> {
-                audioEffectsManager = SystemAudioEffectsManager(audioSessionId).apply {
-                    if (initialize()) {
-                        applySettings(settings.audioEffects)
-                    }
-                }
-            }
-            AudioEffectEngine.NATIVE_CPP -> {
-                // Native 音效在 createRenderersFactory 中已初始化
-                nativeAudioProcessor?.applySettings(settings.audioEffects)
-            }
-            AudioEffectEngine.NONE -> {
-                // 不启用任何音效
-            }
+        if (effectsSessionId != audioSessionId) {
+            audioEffectsManager?.release()
+            audioEffectsManager = null
+            effectsSessionId = audioSessionId
         }
+        updateAudioEffects(SettingsStore(this).load().audioEffects)
     }
 
     private fun updateAudioEffects(settings: AudioEffectSettings) {
-        when (settings.engine) {
-            AudioEffectEngine.NONE -> {
+        val safe = settings.normalized()
+        val player = mediaSession?.player as? ExoPlayer ?: return
+        if (safe.engine != AudioEffectEngine.SYSTEM) {
+            player.setAuxEffectInfo(AuxEffectInfo(0, 0f))
+            audioEffectsManager?.release()
+            audioEffectsManager = null
+        }
+        nativeAudioProcessor?.applySettings(safe)
+        if (safe.engine == AudioEffectEngine.SYSTEM) {
+            val sessionId = player.audioSessionId
+            if (sessionId <= 0) return
+            if (audioEffectsManager == null || effectsSessionId != sessionId) {
                 audioEffectsManager?.release()
-                audioEffectsManager = null
-                nativeAudioProcessor = null
-                // 需要重新创建 player 以移除 AudioProcessor
-                recreatePlayerWithNewSettings(settings)
+                effectsSessionId = sessionId
+                audioEffectsManager = SystemAudioEffectsManager(sessionId).apply { initialize() }
             }
-            AudioEffectEngine.SYSTEM -> {
-                nativeAudioProcessor = null
-                val sessionId = (mediaSession?.player as? ExoPlayer)?.audioSessionId ?: return
-                if (audioEffectsManager == null) {
-                    audioEffectsManager = SystemAudioEffectsManager(sessionId).apply {
-                        initialize()
-                    }
-                }
-                audioEffectsManager?.applySettings(settings)
-            }
-            AudioEffectEngine.NATIVE_CPP -> {
-                audioEffectsManager?.release()
-                audioEffectsManager = null
-
-                // 如果已有 Native 处理器，直接应用设置
-                if (nativeAudioProcessor != null) {
-                    nativeAudioProcessor?.applySettings(settings)
-                } else {
-                    // 否则需要重新创建 player
-                    recreatePlayerWithNewSettings(settings)
+            audioEffectsManager?.let { manager ->
+                manager.applySettings(safe)
+                try {
+                    player.setAuxEffectInfo(AuxEffectInfo(manager.auxEffectId, manager.reverbSendLevel))
+                } catch (_: Exception) {
+                    manager.disableReverb()
+                    player.setAuxEffectInfo(AuxEffectInfo(0, 0f))
                 }
             }
         }
     }
 
-    private fun recreatePlayerWithNewSettings(settings: AudioEffectSettings) {
-        val currentPlayer = mediaSession?.player as? ExoPlayer ?: return
-
-        // 保存当前播放状态
-        val currentMediaItems = mutableListOf<androidx.media3.common.MediaItem>()
-        for (i in 0 until currentPlayer.mediaItemCount) {
-            currentMediaItems.add(currentPlayer.getMediaItemAt(i))
-        }
-        val currentIndex = currentPlayer.currentMediaItemIndex
-        val currentPosition = currentPlayer.currentPosition
-        val playWhenReady = currentPlayer.playWhenReady
-
-        // 释放旧 player
-        currentPlayer.release()
-
-        // 保存引擎设置到 Store（避免 createRenderersFactory 读取旧值）
-        SettingsStore(this).save(SettingsStore(this).load().copy(audioEffects = settings))
-
-        // 重新创建 player
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("NekoPlayer/1.0")
-            .setAllowCrossProtocolRedirects(true)
-        val localAndHttpFactory = DefaultDataSource.Factory(this, httpFactory)
-        val cacheFactory = MusicCache.dataSourceFactory(localAndHttpFactory)
-        val settingsStore = SettingsStore(this)
-        val resolvingFactory = ResolvingDataSource.Factory(cacheFactory) { dataSpec ->
-            val raw = dataSpec.uri.toString()
-            if (!raw.startsWith("neko:")) return@Factory dataSpec
-            val id = raw.removePrefix("neko:").toLongOrNull() ?: return@Factory dataSpec
-            val key = MusicCache.cacheKeyForSong(id)
-            DownloadIndex.get(id)?.let { downloaded ->
-                normalizeReadableUri(downloaded.audioUri)?.let { localUri ->
-                    return@Factory dataSpec.buildUpon().setUri(localUri).setKey("download:$id").build()
-                }
-            }
-            if (settingsStore.load().cacheEnabled && MusicCache.isFullyCached(key)) {
-                return@Factory dataSpec.buildUpon().setKey(key).build()
-            }
-            val realUrl = runCatching { runBlocking { repo.resolvePlayUrl(id) } }.getOrNull()
-            if (realUrl != null) {
-                val builder = dataSpec.buildUpon().setUri(Uri.parse(realUrl)).setKey(key)
-                if (!settingsStore.load().cacheEnabled) {
-                    builder.setFlags(dataSpec.flags or androidx.media3.datasource.DataSpec.FLAG_DONT_CACHE_IF_LENGTH_UNKNOWN)
-                }
-                builder.build()
-            } else {
-                dataSpec.buildUpon().setKey(key).build()
-            }
-        }
-
-        val newPlayer = ExoPlayer.Builder(this)
-            .setRenderersFactory(createRenderersFactory())
-            .setMediaSourceFactory(DefaultMediaSourceFactory(resolvingFactory))
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true
-            )
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
-            .build()
-
-        newPlayer.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY && audioEffectsManager == null && nativeAudioProcessor == null) {
-                    initAudioEffects(newPlayer.audioSessionId)
-                }
-            }
-        })
-
-        // 恢复播放状态
-        newPlayer.setMediaItems(currentMediaItems, currentIndex, currentPosition)
-        newPlayer.playWhenReady = playWhenReady
-        newPlayer.prepare()
-
-        // 更新 MediaSession
-        mediaSession?.player = newPlayer
-    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "top.nekoh2o.player.ACTION_UPDATE_AUDIO_EFFECTS") {
@@ -334,7 +241,9 @@ class PlaybackService : MediaSessionService() {
             reverbWet = intent.getIntExtra("reverb_wet", 0),
             reverbRoomSize = intent.getIntExtra("reverb_room_size", 50),
             reverbDamping = intent.getIntExtra("reverb_damping", 30),
-            loudnessGain = intent.getIntExtra("loudness_gain", 0)
+            loudnessGain = intent.getIntExtra("loudness_gain", 0),
+            masteringPresetId = intent.getIntExtra("mastering_preset", 0),
+            masteringMix = intent.getIntExtra("mastering_mix", 100)
         )
 
         updateAudioEffects(settings)

@@ -39,15 +39,17 @@ class SettingsStore(context: Context) {
             engine = AudioEffectEngine.entries.getOrNull(prefs.getInt(KEY_AUDIO_ENGINE, 0))
                 ?: AudioEffectEngine.NONE,
             eqBands = prefs.getString(KEY_EQ_BANDS, null)?.split(",")
-                ?.mapNotNull { it.toFloatOrNull() } ?: List(10) { 0f },
+                ?.map { it.toFloatOrNull() ?: 0f } ?: List(10) { 0f },
             eqPresetName = prefs.getString(KEY_EQ_PRESET, "") ?: "",
             bassBoost = prefs.getInt(KEY_BASS_BOOST, 0),
             virtualizer = prefs.getInt(KEY_VIRTUALIZER, 0),
             reverbWet = prefs.getInt(KEY_REVERB_WET, 0),
             reverbRoomSize = prefs.getInt(KEY_REVERB_ROOM, 50),
             reverbDamping = prefs.getInt(KEY_REVERB_DAMP, 30),
-            loudnessGain = prefs.getInt(KEY_LOUDNESS, 0)
-        )
+            loudnessGain = prefs.getInt(KEY_LOUDNESS, 0),
+            masteringPresetId = prefs.getInt(KEY_MASTERING_PRESET, 0),
+            masteringMix = prefs.getInt(KEY_MASTERING_MIX, 100)
+        ).normalized()
     )
 
     fun save(s: AppSettings) {
@@ -77,6 +79,8 @@ class SettingsStore(context: Context) {
             .putInt(KEY_REVERB_ROOM, s.audioEffects.reverbRoomSize)
             .putInt(KEY_REVERB_DAMP, s.audioEffects.reverbDamping)
             .putInt(KEY_LOUDNESS, s.audioEffects.loudnessGain)
+            .putInt(KEY_MASTERING_PRESET, s.audioEffects.masteringPresetId)
+            .putInt(KEY_MASTERING_MIX, s.audioEffects.masteringMix)
             .apply()
     }
 
@@ -106,6 +110,8 @@ class SettingsStore(context: Context) {
         private const val KEY_REVERB_ROOM = "reverb_room_size"
         private const val KEY_REVERB_DAMP = "reverb_damping"
         private const val KEY_LOUDNESS = "loudness_gain"
+        private const val KEY_MASTERING_PRESET = "mastering_preset_id"
+        private const val KEY_MASTERING_MIX = "mastering_mix"
 
         // 播放状态保存
         private const val KEY_PLAY_QUEUE = "play_queue"

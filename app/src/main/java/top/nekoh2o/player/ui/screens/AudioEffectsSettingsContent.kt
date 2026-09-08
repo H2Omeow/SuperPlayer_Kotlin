@@ -13,12 +13,16 @@ import top.nekoh2o.player.data.model.AudioEffectEngine
 import top.nekoh2o.player.data.model.AudioEffectSettings
 import top.nekoh2o.player.data.model.EQPresets
 import top.nekoh2o.player.ui.PlayerViewModel
+import top.nekoh2o.player.audio.AudioEffectStatus
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
     val state by vm.ui.collectAsState()
     val settings = state.settings.audioEffects
+    val status by AudioEffectStatus.state.collectAsState()
+    val native = settings.engine == AudioEffectEngine.NATIVE_CPP
+    val capabilities = status.system
 
     Column(
         Modifier.fillMaxSize(),
@@ -26,11 +30,6 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
     ) {
         // 音效引擎选择
         Text("音效引擎", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "选择音效处理方式，可随时切换",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
         Spacer(Modifier.height(8.dp))
 
         AudioEffectEngine.entries.forEach { engine ->
@@ -59,7 +58,7 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
                     when (engine) {
                         AudioEffectEngine.NONE -> {}
                         AudioEffectEngine.SYSTEM -> Text(
-                            "✓ 简单快速  ✓ 兼容性好  ✓ 低功耗\n✗ 不同设备效果差异大",
+                            "系统处理，功耗较低；可用效果与听感取决于设备",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (settings.engine == engine) {
                                 MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
@@ -68,7 +67,7 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
                             }
                         )
                         AudioEffectEngine.NATIVE_CPP -> Text(
-                            "✓ 专业音质  ✓ 全设备一致  ✓ 高扩展性\n✗ CPU 占用稍高",
+                            "本地 DSP，参数更丰富；CPU 占用较高",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (settings.engine == engine) {
                                 MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
@@ -84,6 +83,16 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
         if (settings.engine != AudioEffectEngine.NONE) {
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
 
+            if (native) {
+                status.nativeError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                MasteringSettingsContent(settings, vm::setMasteringPreset, vm::setMasteringMix)
+            } else if (!status.systemInitialized) {
+                Text("等待音频会话，设备能力尚未确认", style = MaterialTheme.typography.bodySmall)
+            } else if (!capabilities.any) {
+                Text("当前音频会话没有可用的系统音效", color = MaterialTheme.colorScheme.error)
+            }
+
+            if (native || capabilities.equalizer) {
             // EQ 预设选择
             Text("均衡器预设", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
@@ -106,11 +115,6 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
 
             // 10 段均衡器可视化
             Text("自定义均衡器", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "拖动滑块调节各频段增益（-15dB ~ +15dB）",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             Spacer(Modifier.height(8.dp))
 
             EqualizerVisualizer(
@@ -118,11 +122,12 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
                 frequencies = EQPresets.frequencies,
                 onBandsChange = { vm.setEqBands(it) }
             )
+            }
 
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
 
             // 低音增强
-            EffectSlider(
+            if (native || capabilities.bassBoost) EffectSlider(
                 label = "低音增强",
                 description = "增强 80Hz 以下频段",
                 value = settings.bassBoost,
@@ -130,7 +135,7 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
             )
 
             // 3D 环绕
-            EffectSlider(
+            if (native || capabilities.virtualizer) EffectSlider(
                 label = "3D 环绕",
                 description = "立体声场拓宽效果",
                 value = settings.virtualizer,
@@ -138,7 +143,7 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
             )
 
             // 空间混响
-            EffectSlider(
+            if (native || capabilities.reverb) EffectSlider(
                 label = "空间混响",
                 description = "模拟厅堂混响效果",
                 value = settings.reverbWet,
@@ -146,7 +151,12 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
             )
 
             // 响度增益
-            EffectSlider(
+            if (native) {
+                EffectSlider("混响空间", "", settings.reverbRoomSize, vm::setReverbRoomSize)
+                EffectSlider("混响阻尼", "", settings.reverbDamping, vm::setReverbDamping)
+            }
+
+            if (native || capabilities.loudness) EffectSlider(
                 label = "响度增益",
                 description = "整体音量提升",
                 value = settings.loudnessGain,
@@ -157,13 +167,7 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
 
             // 重置按钮
             OutlinedButton(
-                onClick = {
-                    vm.setEqBands(List(10) { 0f })
-                    vm.setBassBoost(0)
-                    vm.setVirtualizer(0)
-                    vm.setReverbWet(0)
-                    vm.setLoudnessGain(0)
-                },
+                onClick = vm::resetAudioEffects,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("重置所有音效参数")
@@ -173,7 +177,7 @@ fun AudioEffectsSettingsContent(vm: PlayerViewModel) {
 }
 
 @Composable
-private fun EffectSlider(
+internal fun EffectSlider(
     label: String,
     description: String,
     value: Int,
@@ -187,7 +191,7 @@ private fun EffectSlider(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.bodyLarge)
-                Text(
+                if (description.isNotEmpty()) Text(
                     description,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

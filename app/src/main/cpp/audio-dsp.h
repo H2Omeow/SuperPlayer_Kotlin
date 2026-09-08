@@ -45,18 +45,18 @@ struct Biquad {
         b0 = (1.f + alpha * A) / a0;
         b1 = (-2.f * std::cos(w0)) / a0;
         b2 = (1.f - alpha * A) / a0;
-        a1 = -b1;
+        a1 = b1;
         a2 = (1.f - alpha / A) / a0;
     }
 
     // Low Shelf
-    void setLowShelf(float fs, float freq, float gainDb) {
+    void setLowShelf(float fs, float freq, float gainDb, float q = 0.707f) {
         freq = std::clamp(freq, 10.f, fs * 0.48f);
         float A = std::pow(10.f, gainDb / 40.f);
         float w0 = 2.f * M_PI * freq / fs;
         float cosw0 = std::cos(w0);
         float sinw0 = std::sin(w0);
-        float alpha = sinw0 / (2.f * 0.707f);
+        float alpha = sinw0 / (2.f * std::max(q, 0.1f));
 
         float a0 = (A+1) + (A-1)*cosw0 + 2*std::sqrt(A)*alpha;
         b0 = (A*((A+1) - (A-1)*cosw0 + 2*std::sqrt(A)*alpha)) / a0;
@@ -64,6 +64,30 @@ struct Biquad {
         b2 = (A*((A+1) - (A-1)*cosw0 - 2*std::sqrt(A)*alpha)) / a0;
         a1 = (-2*((A-1) + (A+1)*cosw0)) / a0;
         a2 = ((A+1) + (A-1)*cosw0 - 2*std::sqrt(A)*alpha) / a0;
+    }
+
+    void setHighShelf(float fs, float freq, float gainDb, float q = 0.707f) {
+        freq = std::clamp(freq, 10.f, fs * 0.48f);
+        const float a = std::pow(10.f, gainDb / 40.f);
+        const float w = 2.f * M_PI * freq / fs, c = std::cos(w);
+        const float t = std::sqrt(a) * std::sin(w) / std::max(q, 0.1f);
+        const float d = (a+1) - (a-1)*c + t;
+        b0 = a*((a+1)+(a-1)*c+t)/d;
+        b1 = -2*a*((a-1)+(a+1)*c)/d;
+        b2 = a*((a+1)+(a-1)*c-t)/d;
+        a1 = 2*((a-1)-(a+1)*c)/d;
+        a2 = ((a+1)-(a-1)*c-t)/d;
+    }
+
+    void setPass(float fs, float freq, float q, bool high) {
+        freq = std::clamp(freq, 10.f, fs * 0.48f);
+        const float w = 2.f*M_PI*freq/fs, c = std::cos(w);
+        const float alpha = std::sin(w)/(2.f*q), d = 1.f+alpha;
+        b0 = (high ? 1.f+c : 1.f-c)/(2.f*d);
+        b1 = (high ? -2.f : 2.f)*b0;
+        b2 = b0;
+        a1 = -2.f*c/d;
+        a2 = (1.f-alpha)/d;
     }
 };
 

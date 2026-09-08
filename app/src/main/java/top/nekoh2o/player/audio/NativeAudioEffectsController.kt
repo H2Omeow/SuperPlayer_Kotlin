@@ -1,39 +1,45 @@
 package top.nekoh2o.player.audio
 
-import android.util.Log
+import java.nio.ByteBuffer
+import top.nekoh2o.player.data.model.AudioEffectSettings
 
-/**
- * 方案 B：Native C++ 音效引擎
- *
- * 优点：
- * - 音质专业，全设备一致表现
- * - 完全自定义算法，可扩展性强
- * - 可实现复杂效果（参数EQ、Schroeder混响、压缩器等）
- *
- * 缺点：
- * - 实现复杂，开发周期长（5-7天）
- * - CPU 占用相对较高
- * - 需要维护 C++ 代码
- * - APK 体积增加（约 200KB）
- */
-object NativeAudioEffectsController {
-    private const val TAG = "NativeAudioFX"
+/** 每个 AudioProcessor 独占一个 DSP 实例，仅在播放线程调用。 */
+internal interface NativeEffectBackend {
+    fun create(sampleRate: Int, channelCount: Int): Long
+    fun configure(handle: Long, settings: AudioEffectSettings)
+    fun process(handle: Long, buffer: ByteBuffer, sampleCount: Int)
+    fun reset(handle: Long)
+    fun release(handle: Long)
+}
 
-    init {
-        try {
-            System.loadLibrary("nekoplayer_audio_effects")
-            Log.i(TAG, "Native 库加载成功")
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "Native 库加载失败：${e.message}")
-        }
+internal class JniEffectBackend : NativeEffectBackend {
+    override fun create(sampleRate: Int, channelCount: Int): Long =
+        NativeAudioEffectsController.nativeCreate(sampleRate, channelCount)
+
+    override fun configure(handle: Long, settings: AudioEffectSettings) {
+        NativeAudioEffectsController.nativeConfigure(
+            handle, settings.eqBands.toFloatArray(), settings.bassBoost,
+            settings.virtualizer, settings.reverbWet, settings.reverbRoomSize,
+            settings.reverbDamping, settings.loudnessGain,
+            settings.masteringPresetId, settings.masteringMix
+        )
     }
 
-    external fun nativeInit(sampleRate: Int): Boolean
-    external fun nativeSetEqBands(bands: FloatArray)
-    external fun nativeSetBassBoost(strength: Int)
-    external fun nativeSetVirtualizer(strength: Int)
-    external fun nativeSetReverbWet(wet: Int)
-    external fun nativeSetLoudnessGain(gain: Int)
-    external fun nativeProcessSamples(samples: ShortArray)
-    external fun nativeRelease()
+    override fun process(handle: Long, buffer: ByteBuffer, sampleCount: Int) =
+        NativeAudioEffectsController.nativeProcess(handle, buffer, sampleCount)
+    override fun reset(handle: Long) = NativeAudioEffectsController.nativeReset(handle)
+    override fun release(handle: Long) = NativeAudioEffectsController.nativeRelease(handle)
+}
+
+internal object NativeAudioEffectsController {
+    init { System.loadLibrary("nekoplayer_audio_effects") }
+
+    external fun nativeCreate(sampleRate: Int, channelCount: Int): Long
+    external fun nativeConfigure(
+        handle: Long, bands: FloatArray, bass: Int, width: Int, wet: Int,
+        room: Int, damping: Int, loudness: Int, masteringId: Int, masteringMix: Int
+    )
+    external fun nativeProcess(handle: Long, buffer: ByteBuffer, sampleCount: Int)
+    external fun nativeReset(handle: Long)
+    external fun nativeRelease(handle: Long)
 }

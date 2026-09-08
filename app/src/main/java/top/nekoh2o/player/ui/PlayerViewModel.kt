@@ -1360,9 +1360,21 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         updateAudioEffect { it.copy(loudnessGain = gain.coerceIn(0, 100)) }
     }
 
+    fun setMasteringPreset(id: Int) {
+        updateAudioEffect { it.copy(masteringPresetId = id).normalized() }
+    }
+
+    fun setMasteringMix(mix: Int) {
+        updateAudioEffect { it.copy(masteringMix = mix.coerceIn(0, 100)) }
+    }
+
+    fun resetAudioEffects() {
+        updateAudioEffect { AudioEffectSettings(engine = it.engine) }
+    }
+
     private fun updateAudioEffect(transform: (AudioEffectSettings) -> AudioEffectSettings) {
         viewModelScope.launch {
-            val newEffects = transform(_ui.value.settings.audioEffects)
+            val newEffects = transform(_ui.value.settings.audioEffects).normalized()
             val updated = _ui.value.settings.copy(audioEffects = newEffects)
             settingsStore.save(updated)
             _ui.value = _ui.value.copy(settings = updated)
@@ -1381,6 +1393,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             putExtra("reverb_room_size", effects.reverbRoomSize)
             putExtra("reverb_damping", effects.reverbDamping)
             putExtra("loudness_gain", effects.loudnessGain)
+            putExtra("mastering_preset", effects.masteringPresetId)
+            putExtra("mastering_mix", effects.masteringMix)
         }
         getApplication<Application>().startService(intent)
     }

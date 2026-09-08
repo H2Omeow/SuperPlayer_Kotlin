@@ -12,6 +12,15 @@
 - ⏭️ 播放模式切换（顺序/循环/随机/单曲循环）
 - ⏩ 播放速度调节（0.5x - 2.0x）
 
+### 音效（v1.0.8-pre）
+- **系统音效**：按当前设备音频会话的实际能力显示均衡器、低音增强、环绕、混响和响度控制。
+- **专业音效**：本地 C++ DSP，支持单/双声道 PCM16、10 段 EQ、混响空间与阻尼调节。
+- **预设**：21 组 EQ 预设，以及按参数文档实现的 20 组签名母带（惜、次元、跨界系列）和母带混合比例。
+- 播放中切换引擎保持播放器与队列；专业引擎初始化或处理失败时提示错误并原样播放。
+- 另外 14 组基础/声境母带等待原始源码接入，暂不开放；不提供真实 AI 推理、杜比解码或 24-bit 升格。
+
+本轮已完成服务器端缓冲区、JNI 与 DSP 测试；**真机播放和不同设备系统音效仍需验收**。详见[规格与进度](docs/AUDIO_EFFECTS_SPEC_PROGRESS.md)。
+
 ### 界面设计
 - 🎨 Material Design 3 设计语言
 - 🌃 全局壁纸与动态模糊背景
@@ -54,14 +63,15 @@
 ### 前置要求
 - JDK 17
 - Android SDK
-- Gradle 8.0+
+- Android NDK 与 CMake 3.22.1
+- 使用仓库提供的 Gradle Wrapper
 
 ### 编译步骤
 
 ```bash
 # 克隆仓库
-git clone https://github.com/你的用户名/NekoPlayer.git
-cd NekoPlayer
+git clone https://github.com/H2Omeow/SuperPlayer_Kotlin.git
+cd SuperPlayer_Kotlin
 
 # 编译 Debug 版本
 ./gradlew assembleDebug
@@ -72,14 +82,16 @@ cd NekoPlayer
 
 ### Release 签名配置
 
-在项目根目录创建 `keystore.properties` 文件：
+正式签名通过以下环境变量注入：
 
 ```properties
-storeFile=/path/to/your/keystore.jks
-storePassword=your_store_password
-keyAlias=your_key_alias
-keyPassword=your_key_password
+KEYSTORE_FILE=/path/to/your/keystore.jks
+KEYSTORE_PASSWORD=your_store_password
+KEY_ALIAS=your_key_alias
+KEY_PASSWORD=your_key_password
 ```
+
+未配置时本地 release 使用 debug 签名。GitHub Actions 从仓库 Secrets 读取正式签名，推送 `v*` 标签自动构建并更新 Release。
 
 ## 下载
 
@@ -87,7 +99,7 @@ keyPassword=your_key_password
 
 ## 技术栈
 
-- **语言**: Kotlin
+- **语言**: Kotlin + C++（JNI 音效处理）
 - **UI 框架**: Jetpack Compose
 - **播放器**: Media3 (ExoPlayer)
 - **网络**: Retrofit + OkHttp
@@ -125,6 +137,8 @@ keyPassword=your_key_password
 
 ## 致谢
 
+- [Binaryify/NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi)
+- [MakcRe/KuGouMusicApi](https://github.com/MakcRe/KuGouMusicApi)
 - [Material Design 3](https://m3.material.io/)
 - [Jetpack Compose](https://developer.android.com/jetpack/compose)
 - [Media3](https://developer.android.com/guide/topics/media/media3)
