@@ -27,7 +27,7 @@ class AudioEngine {
 public:
     AudioEngine(int sampleRate,int channelCount) : rate(sampleRate), channels(channelCount),
         reverbL(sampleRate,0), reverbR(sampleRate,23) {
-        outputLimiter.configure(sampleRate,-1.f,80.f);
+        outputLimiter.configure(sampleRate,-1.f,.5f,80.f);
         configure({});
     }
     void configure(EffectSettings next) {

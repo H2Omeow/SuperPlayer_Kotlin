@@ -64,7 +64,7 @@ public:
         inputGain = dbToGain(p.input);
         makeupGain = dbToGain(p.comp.makeup);
         colorGain = dbToGain(p.color.output);
-        limiter.configure(fs, p.ceiling, p.limiterRelease);
+        limiter.configure(fs, p.ceiling, p.limiterAttack, p.limiterRelease);
         for (auto& c : ch) {
             for (auto& f : c.hp) f.setPass(fs, std::max(p.hp, 10.f), p.hpQ, true);
             for (auto& f : c.lp) f.setPass(fs, std::max(p.lp, 10.f), .5f, false);

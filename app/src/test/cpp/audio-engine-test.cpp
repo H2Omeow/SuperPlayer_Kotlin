@@ -15,6 +15,18 @@ static std::vector<int16_t> signal(int rate,int channels,int frames,int amplitud
     return samples;
 }
 
+static int longestPeakPlateau(const std::vector<int16_t>& samples,int threshold) {
+    int longest=0,run=0;
+    int16_t previous=0;
+    for (const auto sample:samples) {
+        if (std::abs(static_cast<int>(sample))>=threshold && sample==previous) ++run;
+        else run=1;
+        longest=std::max(longest,run);
+        previous=sample;
+    }
+    return longest;
+}
+
 int main() {
     for (int rate : {8000,22050,44100,48000,96000,192000}) {
         for (int channels : {1,2}) {
@@ -42,6 +54,7 @@ int main() {
                 engine.process(hot.data(),hot.size());
                 const int safetyLimit=static_cast<int>(std::ceil(dbToGain(-1.f)*32768));
                 for (auto x:hot) assert(std::abs(static_cast<int>(x))<=safetyLimit);
+                assert(longestPeakPlateau(hot,safetyLimit-1)<=2);
 
                 auto chunked=dry;
                 engine.reset();
