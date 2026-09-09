@@ -9,6 +9,10 @@ inline float timeCoefficient(float fs, float ms) {
     return std::exp(-1.f / std::max(1.f, fs * ms * .001f));
 }
 
+inline float smoothSaturate(float input) {
+    return input / std::sqrt(1.f + input * input);
+}
+
 class SignatureChain {
     struct Channel {
         Biquad hp[2], lp[2], eq[3], sidechain;
@@ -16,8 +20,8 @@ class SignatureChain {
     } ch[2];
     SignaturePreset p{};
     float dcCoefficient = 0, attack = 0, release = 0;
-    float limiterAttack = 0, limiterRelease = 0, limiterGain = 1;
-    float inputGain = 1, makeupGain = 1, colorGain = 1, ceiling = 1;
+    float inputGain = 1, makeupGain = 1, colorGain = 1;
+    LinkedPeakLimiter limiter;
 
     float mono(float x, Channel& c) {
         x *= inputGain;
@@ -42,10 +46,8 @@ class SignatureChain {
             const float driven = clampf(x*(1+p.color.drive*3)+p.color.bias, -8.f, 8.f);
             float saturated;
             if (p.color.type == 1) saturated = std::tanh(driven)*.85f;
-            else if (p.color.type == 2) {
-                const float square = driven*driven;
-                saturated = driven*(1-.15f*square+.02f*square*square);
-            } else saturated = clampf(driven, -1, 1);
+            else if (p.color.type == 2) saturated = smoothSaturate(driven);
+            else saturated = clampf(driven, -1, 1);
             x = driven*(1-p.color.mix) + saturated*p.color.mix*colorGain;
         }
         return clampf(x, -32, 32);
@@ -59,12 +61,10 @@ public:
         dcCoefficient = std::exp(-2.f*M_PI*15.f/fs);
         attack = timeCoefficient(fs, p.comp.attack);
         release = timeCoefficient(fs, p.comp.release);
-        limiterAttack = timeCoefficient(fs, p.limiterAttack);
-        limiterRelease = timeCoefficient(fs, p.limiterRelease);
         inputGain = dbToGain(p.input);
         makeupGain = dbToGain(p.comp.makeup);
         colorGain = dbToGain(p.color.output);
-        ceiling = dbToGain(p.ceiling);
+        limiter.configure(fs, p.ceiling, p.limiterRelease);
         for (auto& c : ch) {
             for (auto& f : c.hp) f.setPass(fs, std::max(p.hp, 10.f), p.hpQ, true);
             for (auto& f : c.lp) f.setPass(fs, std::max(p.lp, 10.f), .5f, false);
@@ -85,13 +85,7 @@ public:
         const float mid = (l+r)*.5f, side = (l-r)*.5f*p.width;
         l = mid+side;
         r = mid-side;
-        const float peak = std::max(std::abs(l),std::abs(r));
-        const float target = std::min(1.f,ceiling/std::max(peak,1e-9f));
-        const float coeff = target < limiterGain ? limiterAttack : limiterRelease;
-        limiterGain = coeff*limiterGain+(1-coeff)*target;
-        // Sample-peak safety clamp; this is not an oversampled true-peak limiter.
-        l = clampf(l*limiterGain,-ceiling,ceiling);
-        r = clampf(r*limiterGain,-ceiling,ceiling);
+        limiter.process(l, r);
     }
 };
 }

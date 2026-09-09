@@ -20,11 +20,14 @@ class AudioEngine {
     Biquad eq[2][10], bass[2];
     Reverb reverbL, reverbR;
     SignatureChain mastering;
+    LinkedPeakLimiter outputLimiter;
     float loudnessGain=1;
+    bool effectsActive=false;
 
 public:
     AudioEngine(int sampleRate,int channelCount) : rate(sampleRate), channels(channelCount),
         reverbL(sampleRate,0), reverbR(sampleRate,23) {
+        outputLimiter.configure(sampleRate,-1.f,80.f);
         configure({});
     }
     void configure(EffectSettings next) {
@@ -51,12 +54,18 @@ public:
             mastering.configure(next.masteringId,rate);
         if (next.wet!=settings.wet && next.wet==0) { reverbL.reset(); reverbR.reset(); }
         loudnessGain=dbToGain(next.loudness*.06f);
+        const bool nextEffectsActive=next.bass || next.width || next.wet || next.loudness ||
+            (next.masteringId && next.masteringMix) ||
+            std::any_of(next.eq.begin(),next.eq.end(),[](float gain){return gain!=0;});
+        if (nextEffectsActive!=effectsActive) outputLimiter.reset();
+        effectsActive=nextEffectsActive;
         settings=next;
     }
     void reset() {
         for (auto& channel:eq) for (auto& f:channel) f.reset();
         for (auto& f:bass) f.reset();
         reverbL.reset(); reverbR.reset();
+        outputLimiter.reset();
         if (settings.masteringId) mastering.configure(settings.masteringId,rate);
     }
     void process(int16_t* samples,int count) {
@@ -84,8 +93,10 @@ public:
                 const float rr=channels==2?reverbR.process(r,room,damping):rl;
                 l=l*(1-wet)+rl*wet; r=r*(1-wet)+rr*wet;
             }
-            samples[i]=static_cast<int16_t>(std::lrint(clampf(l*loudnessGain,-1,32767.f/32768)*32768));
-            if (channels==2) samples[i+1]=static_cast<int16_t>(std::lrint(clampf(r*loudnessGain,-1,32767.f/32768)*32768));
+            l*=loudnessGain; r*=loudnessGain;
+            if (effectsActive) outputLimiter.process(l,r);
+            samples[i]=static_cast<int16_t>(std::lrint(clampf(l,-1,32767.f/32768)*32768));
+            if (channels==2) samples[i+1]=static_cast<int16_t>(std::lrint(clampf(r,-1,32767.f/32768)*32768));
         }
     }
 };

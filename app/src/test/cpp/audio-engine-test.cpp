@@ -7,10 +7,10 @@
 
 using namespace neko_dsp;
 
-static std::vector<int16_t> signal(int rate,int channels,int frames) {
+static std::vector<int16_t> signal(int rate,int channels,int frames,int amplitude=12000) {
     std::vector<int16_t> samples(frames*channels);
     for (int i=0;i<frames;++i) for (int ch=0;ch<channels;++ch) {
-        samples[i*channels+ch]=static_cast<int16_t>(12000*std::sin(2*M_PI*997*i/rate+ch*.4));
+        samples[i*channels+ch]=static_cast<int16_t>(amplitude*std::sin(2*M_PI*997*i/rate+ch*.4));
     }
     return samples;
 }
@@ -36,6 +36,13 @@ int main() {
                 const int limit=static_cast<int>(std::ceil(dbToGain(signaturePresets[id-15].ceiling)*32768));
                 for (auto x:output) assert(std::abs(static_cast<int>(x))<=limit);
                 distinct.insert(output);
+
+                auto hot=signal(rate,channels,rate/5,32000);
+                engine.reset();
+                engine.process(hot.data(),hot.size());
+                const int safetyLimit=static_cast<int>(std::ceil(dbToGain(-1.f)*32768));
+                for (auto x:hot) assert(std::abs(static_cast<int>(x))<=safetyLimit);
+
                 auto chunked=dry;
                 engine.reset();
                 for (size_t offset=0;offset<chunked.size();) {
@@ -58,12 +65,23 @@ int main() {
             engine.configure(extreme);
             output=dry;
             engine.process(output.data(),output.size());
+            const int safetyLimit=static_cast<int>(std::ceil(dbToGain(-1.f)*32768));
+            for (auto x:output) assert(std::abs(static_cast<int>(x))<=safetyLimit);
             engine.reset();
             std::vector<int16_t> silence(channels*4096);
             engine.process(silence.data(),silence.size());
             assert(std::all_of(silence.begin(),silence.end(),[](int16_t x){return x==0;}));
         }
     }
+    float previous=-1.f;
+    for (int i=-800;i<=800;++i) {
+        const float value=smoothSaturate(i*.01f);
+        assert(std::isfinite(value));
+        assert(value>=previous);
+        assert(std::abs(value)<1.f);
+        previous=value;
+    }
+    assert(std::abs(smoothSaturate(-3.f)+smoothSaturate(3.f))<1e-6f);
     Biquad eq;
     eq.setPeakingEQ(44100,1000,1,0);
     for(int i=0;i<10000;++i) {

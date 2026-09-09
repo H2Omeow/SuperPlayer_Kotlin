@@ -4,10 +4,12 @@
 
 - 系统音效按实际初始化与启用结果显示控制项，补齐响度与辅助混响接入。
 - 专业音效增加混响空间、阻尼调节，修正 EQ 反馈系数与采样率/声道处理。
+- 修复部分专业预设的着色曲线在高电平输入下数值膨胀并硬裁剪的问题；增加母带内与最终合成后的声道联动峰值保护。
+- 修复从最近任务划掉应用时，非播放状态的媒体服务未按 Media3 前台状态结束而被 Android 判定崩溃并重启的问题。
 - 提供 21 组 EQ 预设、20 组签名母带和母带混合比例，完善设置保存与重置。
 - 更新 README 与致谢，感谢 [NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi) 和 [KuGouMusicApi](https://github.com/MakcRe/KuGouMusicApi)。
 
-验证：9 项 JVM 回归通过；C++ ASan/UBSan 检查覆盖 20 组预设、6 个采样率、单/双声道；真实主机 JNI 测试、debug/release 构建及 debug lint 通过。
+验证：9 项 JVM 回归通过；C++ ASan/UBSan 检查覆盖 20 组预设、6 个采样率、单/双声道、热信号和复合极端增益；真实主机 JNI 测试、debug/release 构建及 debug lint 通过。
 
 **预发布限制**：真机播放与系统音效兼容性尚未完成验收。20 组签名母带基于参考参数表实现，仍待原始源码一致性核对；另 14 组基础/声境母带暂不开放。当前为 PCM16 实时 DSP，不提供真实 AI、杜比多声道解码、过采样真峰值保证或 24-bit 升格。
 

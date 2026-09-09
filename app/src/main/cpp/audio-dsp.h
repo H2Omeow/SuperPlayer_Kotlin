@@ -17,6 +17,30 @@ inline float dbToGain(float db) {
     return std::pow(10.f, db / 20.f);
 }
 
+class LinkedPeakLimiter {
+    float ceiling = 1.f;
+    float release = 0.f;
+    float gain = 1.f;
+
+public:
+    void configure(float fs, float ceilingDb, float releaseMs) {
+        ceiling = dbToGain(ceilingDb);
+        release = std::exp(-1.f / std::max(1.f, fs * releaseMs * .001f));
+        gain = 1.f;
+    }
+
+    void reset() { gain = 1.f; }
+
+    void process(float& left, float& right) {
+        const float peak = std::max(std::abs(left), std::abs(right));
+        const float target = std::min(1.f, ceiling / std::max(peak, 1e-9f));
+        // Without lookahead, attack must be immediate to avoid falling back to hard clipping.
+        gain = target < gain ? target : release * gain + (1.f - release) * target;
+        left = clampf(left * gain, -ceiling, ceiling);
+        right = clampf(right * gain, -ceiling, ceiling);
+    }
+};
+
 // Biquad 滤波器（Transposed Direct Form II）
 struct Biquad {
     float b0 = 1.f, b1 = 0.f, b2 = 0.f;
