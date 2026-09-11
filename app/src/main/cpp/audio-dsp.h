@@ -19,36 +19,37 @@ inline float dbToGain(float db) {
 
 class LinkedPeakLimiter {
     float ceiling = 1.f;
-    float attack = 0.f;
-    float release = 0.f;
-    float gain = 1.f;
+    double release = 0;
+    double gain = 1;
+    int holdFrames = 1, remainingHold = 0;
 
 public:
-    void configure(float fs, float ceilingDb, float attackMs, float releaseMs) {
+    void configure(float fs, float ceilingDb, float releaseMs) {
         ceiling = dbToGain(ceilingDb);
-        attack = std::exp(-1.f / std::max(1.f, fs * attackMs * .001f));
-        release = std::exp(-1.f / std::max(1.f, fs * releaseMs * .001f));
-        gain = 1.f;
+        release = std::exp(-1. / std::max(1., fs * releaseMs * .001));
+        holdFrames = std::max(1, static_cast<int>(std::ceil(fs * .05f)));
+        reset();
     }
 
-    void reset() { gain = 1.f; }
+    void reset() { gain = 1.f; remainingHold = 0; }
 
     void process(float& left, float& right) {
         const float peak = std::max(std::abs(left), std::abs(right));
         const float target = std::min(1.f, ceiling / std::max(peak, 1e-9f));
-        const float coeff = target < gain ? attack : release;
-        gain = coeff * gain + (1.f - coeff) * target;
-        const float knee = ceiling * .82f;
-        const float span = std::max(ceiling - knee, 1e-6f);
-        auto softLimit = [knee,span](float sample) {
-            const float sign = sample < 0.f ? -1.f : 1.f;
-            const float magnitude = std::abs(sample);
-            if (magnitude <= knee) return sample;
-            const float limited = knee + span * (1.f - std::exp(-(magnitude - knee) / span));
-            return sign * limited;
-        };
-        left = clampf(softLimit(left * gain), -ceiling, ceiling);
-        right = clampf(softLimit(right * gain), -ceiling, ceiling);
+        // Hold across bass cycles so the gain does not track individual wave crests.
+        // There is no lookahead: attack must be immediate to prevent overshoot.
+        if (target <= gain) {
+            gain = target;
+            remainingHold = holdFrames;
+        } else if (target<1 && target<=gain*1.001) {
+            remainingHold = holdFrames;
+        } else if (remainingHold > 0) {
+            --remainingHold;
+        } else {
+            gain = release * gain + (1.f - release) * target;
+        }
+        left = clampf(left * gain, -ceiling, ceiling);
+        right = clampf(right * gain, -ceiling, ceiling);
     }
 };
 
@@ -66,6 +67,14 @@ struct Biquad {
     }
 
     void reset() { z1 = z2 = 0.f; }
+
+    double magnitude(double radians) const {
+        const double c1=std::cos(radians), s1=std::sin(radians);
+        const double c2=std::cos(2*radians), s2=std::sin(2*radians);
+        const double nr=b0+b1*c1+b2*c2, ni=b1*s1+b2*s2;
+        const double dr=1+a1*c1+a2*c2, di=a1*s1+a2*s2;
+        return std::sqrt((nr*nr+ni*ni)/std::max(dr*dr+di*di,1e-30));
+    }
 
     // RBJ Cookbook Peaking EQ
     void setPeakingEQ(float fs, float freq, float q, float gainDb) {

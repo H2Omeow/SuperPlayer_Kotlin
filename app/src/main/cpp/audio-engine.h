@@ -21,13 +21,13 @@ class AudioEngine {
     Reverb reverbL, reverbR;
     SignatureChain mastering;
     LinkedPeakLimiter outputLimiter;
-    float loudnessGain=1;
+    float loudnessGain=1, inputHeadroom=1;
     bool effectsActive=false;
 
 public:
     AudioEngine(int sampleRate,int channelCount) : rate(sampleRate), channels(channelCount),
         reverbL(sampleRate,0), reverbR(sampleRate,23) {
-        outputLimiter.configure(sampleRate,-1.f,.5f,80.f);
+        outputLimiter.configure(sampleRate,-1.f,80.f);
         configure({});
     }
     void configure(EffectSettings next) {
@@ -49,6 +49,19 @@ public:
         if (next.bass!=settings.bass) for (auto& filter:bass) {
             filter.reset();
             filter.setLowShelf(rate,80,next.bass*.12f);
+        }
+        if (next.eq!=settings.eq || next.bass!=settings.bass) {
+            // Measure the combined response; summing ten boost values over-attenuates.
+            double peak=1;
+            for (int i=0;i<=1024;++i) {
+                const double hz=i==0 ? 0 : 10*std::pow(rate*.05, (i-1)/1023.);
+                const double radians=2*M_PI*hz/rate;
+                double response=next.bass ? bass[0].magnitude(radians) : 1;
+                for (int b=0;b<10;++b) if (next.eq[b]!=0)
+                    response*=eq[0][b].magnitude(radians);
+                peak=std::max(peak,response);
+            }
+            inputHeadroom=static_cast<float>(1/peak);
         }
         if (next.masteringId && next.masteringId!=settings.masteringId)
             mastering.configure(next.masteringId,rate);
@@ -72,6 +85,7 @@ public:
         if (count<0 || count%channels) throw std::invalid_argument("Incomplete PCM frame");
         for (int i=0;i<count;i+=channels) {
             float l=samples[i]/32768.f, r=channels==2?samples[i+1]/32768.f:l;
+            l*=inputHeadroom; r*=inputHeadroom;
             for (int b=0;b<10;++b) if (settings.eq[b]!=0) {
                 l=eq[0][b].process(l); if (channels==2) r=eq[1][b].process(r);
             }

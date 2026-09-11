@@ -15,10 +15,11 @@ static std::vector<int16_t> signal(int rate,int channels,int frames,int amplitud
     return samples;
 }
 
-static int longestPeakPlateau(const std::vector<int16_t>& samples,int threshold) {
+static int longestPeakPlateau(const std::vector<int16_t>& samples,int threshold,size_t start=0) {
     int longest=0,run=0;
     int16_t previous=0;
-    for (const auto sample:samples) {
+    for (size_t i=start;i<samples.size();++i) {
+        const auto sample=samples[i];
         if (std::abs(static_cast<int>(sample))>=threshold && sample==previous) ++run;
         else run=1;
         longest=std::max(longest,run);
@@ -54,7 +55,17 @@ int main() {
                 engine.process(hot.data(),hot.size());
                 const int safetyLimit=static_cast<int>(std::ceil(dbToGain(-1.f)*32768));
                 for (auto x:hot) assert(std::abs(static_cast<int>(x))<=safetyLimit);
-                assert(longestPeakPlateau(hot,safetyLimit-1)<=2);
+                // A zero-lookahead limiter changes the first rising transient;
+                // repeated flat crests after settling indicate sustained clipping.
+                const int plateau=longestPeakPlateau(hot,safetyLimit-1,rate/10*channels);
+                if (plateau>2) std::cerr << "peak plateau: preset=" << id << " rate=" << rate
+                    << " channels=" << channels << " samples=" << plateau << '\n';
+                assert(plateau<=2);
+
+                engine.reset();
+                std::vector<int16_t> quiet(rate/10*channels);
+                engine.process(quiet.data(),quiet.size());
+                assert(std::all_of(quiet.begin(),quiet.end(),[](int16_t x){return x==0;}));
 
                 auto chunked=dry;
                 engine.reset();
@@ -80,6 +91,14 @@ int main() {
             engine.process(output.data(),output.size());
             const int safetyLimit=static_cast<int>(std::ceil(dbToGain(-1.f)*32768));
             for (auto x:output) assert(std::abs(static_cast<int>(x))<=safetyLimit);
+            for (int id=15;id<=34;++id) for (int mix : {25,100}) {
+                extreme.masteringId=id; extreme.masteringMix=mix;
+                engine.configure(extreme);
+                engine.reset();
+                output=signal(rate,channels,rate/10,32000);
+                engine.process(output.data(),output.size());
+                for (auto x:output) assert(std::abs(static_cast<int>(x))<=safetyLimit);
+            }
             engine.reset();
             std::vector<int16_t> silence(channels*4096);
             engine.process(silence.data(),silence.size());

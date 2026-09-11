@@ -17,6 +17,7 @@ class SignatureChain {
     struct Channel {
         Biquad hp[2], lp[2], eq[3], sidechain;
         float dcInput = 0, dcOutput = 0, envelope = 0;
+        float colorDcInput = 0, colorDcOutput = 0;
     } ch[2];
     SignaturePreset p{};
     float dcCoefficient = 0, attack = 0, release = 0;
@@ -43,12 +44,19 @@ class SignatureChain {
         }
         x *= (1-p.comp.mix) + dbToGain(reduction)*makeupGain*p.comp.mix;
         if (p.color.type != 0) {
-            const float driven = clampf(x*(1+p.color.drive*3)+p.color.bias, -8.f, 8.f);
-            float saturated;
-            if (p.color.type == 1) saturated = std::tanh(driven)*.85f;
-            else if (p.color.type == 2) saturated = smoothSaturate(driven);
-            else saturated = clampf(driven, -1, 1);
-            x = driven*(1-p.color.mix) + saturated*p.color.mix*colorGain;
+            const float drive=1+p.color.drive*3;
+            auto shape=[this](float value) {
+                if (p.color.type==1) return std::tanh(value)*.85f;
+                if (p.color.type==2) return smoothSaturate(value);
+                return clampf(value,-1,1);
+            };
+            // Drive belongs to the wet branch; compensate it before parallel mixing.
+            const float saturated=(shape(x*drive+p.color.bias)-shape(p.color.bias))/drive;
+            x=x*(1-p.color.mix)+saturated*p.color.mix*colorGain;
+            const float dc=x-c.colorDcInput+dcCoefficient*c.colorDcOutput;
+            c.colorDcInput=x;
+            c.colorDcOutput=dc;
+            x=dc;
         }
         return clampf(x, -32, 32);
     }
@@ -64,7 +72,7 @@ public:
         inputGain = dbToGain(p.input);
         makeupGain = dbToGain(p.comp.makeup);
         colorGain = dbToGain(p.color.output);
-        limiter.configure(fs, p.ceiling, p.limiterAttack, p.limiterRelease);
+        limiter.configure(fs, p.ceiling, p.limiterRelease);
         for (auto& c : ch) {
             for (auto& f : c.hp) f.setPass(fs, std::max(p.hp, 10.f), p.hpQ, true);
             for (auto& f : c.lp) f.setPass(fs, std::max(p.lp, 10.f), .5f, false);
