@@ -50,9 +50,12 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        val url = runCatching { repo.resolvePlayUrl(song, quality) }.getOrNull()
+        val audio = try { top.nekoh2o.player.data.repo.SongQualityRepository().resolveDownload(song, quality) }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) { onError(e.message ?: "音质核验失败"); return }
+        val url = audio?.url
         if (url == null) {
-            onError("获取下载地址失败")
+            onError("当前账号无法下载所选音质，请刷新音质列表")
             return
         }
 
@@ -65,7 +68,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         val dirUri = downloadDirUri?.ifBlank { null }
 
         val result = runCatching {
-            Downloader.download(getApplication(), song, url, quality, lrcText, dirUri)
+            Downloader.download(getApplication(), song, url, audio.quality.id, lrcText, dirUri)
         }.getOrElse {
             onError("下载失败：${it.message}")
             return

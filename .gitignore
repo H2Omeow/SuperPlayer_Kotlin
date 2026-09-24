@@ -13,3 +13,5 @@ nano.*.save
 .aider.input.history
 .aider*
 app/.cxx/
+
+.kotlin/

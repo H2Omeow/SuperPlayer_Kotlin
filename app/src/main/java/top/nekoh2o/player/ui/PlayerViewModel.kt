@@ -723,37 +723,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         toast("音质已切换")
     }
 
-    /**
-     * 根据网易云会员等级返回可用的音质选项
-     */
-    fun getAvailableQualities(vipType: Int): List<Pair<String, String>> {
-        return when {
-            vipType >= 11 -> listOf(  // SVIP
-                "standard" to "标准",
-                "higher" to "较高",
-                "exhigh" to "极高",
-                "lossless" to "无损 SQ",
-                "hires" to "Hi-Res",
-                "jyeffect" to "高清臻音",
-                "sky" to "沉浸环绕声",
-                "jymaster" to "超清母带",
-                "dolby" to "臻音全景声"
-            )
-            vipType >= 1 -> listOf(  // VIP
-                "standard" to "标准",
-                "higher" to "较高",
-                "exhigh" to "极高",
-                "lossless" to "无损 SQ",
-                "hires" to "Hi-Res",
-                "jyeffect" to "高清臻音"
-            )
-            else -> listOf(  // 普通用户
-                "standard" to "标准",
-                "higher" to "较高",
-                "exhigh" to "极高"
-            )
-        }
-    }
     fun refreshWallpaper(isLandscape: Boolean = false) {
         viewModelScope.launch {
             val url = userRepo.randomWallpaper(isLandscape)
@@ -766,19 +735,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val keys = cacheVm.getCachedKeys()
             // 汇总所有已知歌曲来源，构建 id → Song 查表，修复缓存全显示"未知歌曲"
-            val lookup = HashMap<Long, Song>()
+            val lookup = HashMap<String, Song>()
             val sources = listOf(
                 queue, local.history, local.favorites,
                 _ui.value.results, _ui.value.recSongs
             )
-            sources.forEach { list -> list.forEach { lookup.putIfAbsent(it.id, it) } }
-            local.playlists.forEach { pl -> pl.songs.forEach { lookup.putIfAbsent(it.id, it) } }
+            sources.forEach { list -> list.forEach { lookup.putIfAbsent(MusicCache.cacheKeyForSong(it), it) } }
+            local.playlists.forEach { pl -> pl.songs.forEach { lookup.putIfAbsent(MusicCache.cacheKeyForSong(it), it) } }
             // 已下载索引兜底
-            DownloadIndex.all().forEach { lookup.putIfAbsent(it.songId, it.song) }
+            DownloadIndex.all().forEach { lookup.putIfAbsent(MusicCache.cacheKeyForSong(it.song), it.song) }
 
             val size = MusicCache.cacheSpace() / keys.size.coerceAtLeast(1)
             val items = keys.map { key ->
-                val song = key.toLongOrNull()?.let { lookup[it] }
+                val song = lookup[key.substringBefore(":quality:")]
                 top.nekoh2o.player.data.model.CachedItem(key, song, size)
             }
             _ui.value = _ui.value.copy(cachedItems = items, selectedCacheKeys = emptySet())

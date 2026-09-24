@@ -66,6 +66,19 @@ object MusicCache {
     fun cacheKeyForSong(song: top.nekoh2o.player.data.model.Song): String =
         if (song.source == "netease") cacheKeyForSong(song.id) else song.source + ":" + song.hash.ifEmpty { song.id.toString() }
 
+    /** Prefer the requested cached format, otherwise the highest complete local format. */
+    fun offlineKey(song: top.nekoh2o.player.data.model.Song, preferred: String): String? {
+        val base = cacheKeyForSong(song)
+        val prefix = base + ":quality:"
+        val mapped = top.nekoh2o.player.data.repo.SongQualityRepository.preferredFor(song.source, preferred)
+        val quality = top.nekoh2o.player.data.repo.SongQualityRepository
+        return cachedKeys().filter { it.startsWith(prefix) && isFullyCached(it) }
+            .sortedWith(compareByDescending<String> { it.removePrefix(prefix) == mapped }.thenByDescending {
+                val id = it.removePrefix(prefix)
+                if (song.source == "kugou") quality.kgLabels[id]?.second ?: -1 else quality.ncLevels.indexOf(id)
+            }).firstOrNull() ?: base.takeIf { isFullyCached(it) }
+    }
+
     @Synchronized
     fun remove(key: String) {
         val cache = instance ?: return

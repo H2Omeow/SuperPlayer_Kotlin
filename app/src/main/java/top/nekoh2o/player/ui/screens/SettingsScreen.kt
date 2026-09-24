@@ -326,51 +326,19 @@ private fun PersonalizationSettings(vm: PlayerViewModel, s: top.nekoh2o.player.d
 
 @Composable
 private fun PlaybackSettings(vm: PlayerViewModel, state: top.nekoh2o.player.ui.UiState, s: top.nekoh2o.player.data.model.AppSettings) {
-    Text("音质选择", style = MaterialTheme.typography.titleMedium)
-    Text(
-        "根据网易云会员等级自动开放对应音质档位",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-
-    // 根据网易云会员等级获取可用音质
-    val availableQualities = vm.getAvailableQualities(state.ncAccount.vipType)
+    Text("默认播放音质", style = MaterialTheme.typography.titleMedium)
+    Text("每首歌先查询可用音质；支持默认档位时优先使用，否则选择当前账号可播放的最高档位。下载另行核验下载权限。",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val allLevels = listOf(
-        "standard" to "标准",
-        "higher" to "较高",
-        "exhigh" to "极高（普通用户最高）",
-        "lossless" to "无损 SQ（黑胶VIP）",
-        "hires" to "Hi-Res 无损 48kHz/16bit（黑胶VIP）",
-        "jyeffect" to "高清臻音 Spatial Audio 96kHz/24bit（黑胶VIP）",
-        "sky" to "沉浸环绕声 Surround Audio 5.1声道（超级VIP）",
-        "jymaster" to "超清母带 Master 192kHz/24bit（超级VIP）",
-        "dolby" to "臻音全景声 Audio Vivid 7.1.4声道（超级VIP）"
+        "standard" to "标准", "higher" to "较高", "exhigh" to "极高",
+        "lossless" to "无损 SQ", "hires" to "Hi-Res", "jyeffect" to "高清臻音",
+        "sky" to "沉浸环绕声", "jymaster" to "超清母带", "dolby" to "臻音全景声"
     )
-
     allLevels.forEach { (value, label) ->
-        val enabled = availableQualities.any { it.first == value }
-        Row(
-            Modifier.fillMaxWidth()
-                .selectable(state.quality == value && enabled) {
-                    if (enabled) vm.setQuality(value)
-                    else vm.toast("当前会员等级不支持此音质")
-                }
-                .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            RadioButton(
-                selected = state.quality == value,
-                onClick = {
-                    if (enabled) vm.setQuality(value)
-                    else vm.toast("当前会员等级不支持此音质")
-                },
-                enabled = enabled
-            )
-            Text(
-                label,
-                color = if (enabled) MaterialTheme.colorScheme.onSurface
-                       else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-            )
+        Row(Modifier.fillMaxWidth().selectable(state.quality == value) { vm.setQuality(value) }.padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = state.quality == value, onClick = { vm.setQuality(value) })
+            Text(label)
         }
     }
 

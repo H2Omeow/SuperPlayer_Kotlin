@@ -29,6 +29,7 @@ object ApiFactory {
         private set
 
     private lateinit var httpClient: OkHttpClient
+    private lateinit var nativeNetease: OkHttpClient
 
     fun init(context: Context) {
         cookieJar = PersistentCookieJar(context.applicationContext)
@@ -58,7 +59,10 @@ object ApiFactory {
             )
             .build()
 
-        android.util.Log.d("ApiFactory", "init() completed - marking ready")
+        nativeNetease = httpClient.newBuilder().cookieJar(okhttp3.CookieJar.NO_COOKIES)
+            .apply { interceptors().clear() }.followRedirects(false).callTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor(top.nekoh2o.player.data.net.nativeapi.NeteaseNativeInterceptor(
+                context.getSharedPreferences("netease_native", Context.MODE_PRIVATE))).build()
         ready.complete(Unit)
     }
 
@@ -75,7 +79,7 @@ object ApiFactory {
     }
 
     val music: MusicApi by lazy {
-        retrofit(BASE).create(MusicApi::class.java)
+        retrofit(BASE, nativeNetease).create(MusicApi::class.java)
     }
 
     val user: UserApi by lazy {
@@ -83,17 +87,20 @@ object ApiFactory {
     }
 
     val netease: NeteaseApi by lazy {
-        retrofit(BASE).create(NeteaseApi::class.java)
+        retrofit(BASE, nativeNetease).create(NeteaseApi::class.java)
     }
 
     val kugou: KugouApi by lazy {
         val client = httpClient.newBuilder()
             .cookieJar(okhttp3.CookieJar.NO_COOKIES)
             .apply { interceptors().clear() }
+            .followRedirects(false).callTimeout(30, TimeUnit.SECONDS)
             .addInterceptor(KugouInterceptor(CookieStore.kgSessions))
+            .addInterceptor(top.nekoh2o.player.data.net.nativeapi.KugouNativeInterceptor(CookieStore.kgSessions))
             .build()
         retrofit(BASE, client).create(KugouApi::class.java)
     }
 
+    val nativeMusic: ProviderApi by lazy { retrofit(BASE, nativeNetease).create(ProviderApi::class.java) }
     fun client(): OkHttpClient = httpClient
 }

@@ -37,6 +37,14 @@ jobs:
             "$RUNNER_TEMP/$test"
           done
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify deployment regression tests
+        run: node --test deploy/*.test.*
+
       - name: Install NDK
         run: |
           echo "y" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
@@ -67,7 +75,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/NekoPlayer-*.apk
-          body_path: ${{ github.ref_name == 'v1.0.8' && 'docs/RELEASE_v1.0.8.md' || '' }}
+          body_path: ${{ format('docs/RELEASE_{0}.md', github.ref_name) }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, 'pre') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}

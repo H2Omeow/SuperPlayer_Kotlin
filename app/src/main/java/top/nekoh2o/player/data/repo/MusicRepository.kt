@@ -137,44 +137,11 @@ class MusicRepository {
      * @param level 音质等级
      */
     suspend fun resolvePlayUrl(song: Song, level: String = CookieStore.level): String? {
-        return when (song.source) {
-            "kugou" -> resolveKugouPlayUrl(song, level)
-            "netease" -> resolveNeteasePlayUrl(song.id, level)
-            else -> resolveNeteasePlayUrl(song.id, level)
-        }
+        return SongQualityRepository().resolvePlayback(song, level)?.url
     }
 
-    /**
-     * 网易云音乐播放URL解析（兼容旧接口）
-     */
-    suspend fun resolvePlayUrl(id: Long, level: String = CookieStore.level): String? {
-        return resolveNeteasePlayUrl(id, level)
-    }
-
-    private suspend fun resolveNeteasePlayUrl(id: Long, level: String): String? {
-        val ck = CookieStore.activeCookie().ifEmpty { null }
-        runCatching {
-            api.songUrlV1(id, level, ck).data.firstOrNull()?.url?.let { return it }
-        }
-        val brMap = mapOf(
-            "standard" to 128000, "higher" to 192000,
-            "exhigh" to 320000, "lossless" to 999000
-        )
-        return runCatching {
-            api.songUrl(id, brMap[level] ?: 320000, ck).data.firstOrNull()?.url
-        }.getOrNull()
-    }
-
-    private suspend fun resolveKugouPlayUrl(song: Song, level: String): String? {
-        val kgRepo = KugouRepository()
-        val qualityMap = mapOf(
-            "standard" to "128",
-            "higher" to "320",
-            "exhigh" to "320",
-            "lossless" to "flac"
-        )
-        return kgRepo.getSongUrl(song.hash, qualityMap[level] ?: "320")
-    }
+    suspend fun resolvePlayUrl(id: Long, level: String = CookieStore.level): String? =
+        resolvePlayUrl(Song(id, "", ""), level)
 
     // ---------- 分类搜索：歌手 ----------
     suspend fun searchArtist(keyword: String, offset: Int, limit: Int = 30): List<top.nekoh2o.player.data.model.ArtistItem> {

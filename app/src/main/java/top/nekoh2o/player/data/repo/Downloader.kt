@@ -41,7 +41,7 @@ object Downloader {
      *
      * @param context  应用 Context
      * @param song     要下载的歌曲
-     * @param url      音频直链（已通过 resolvePlayUrl 获取）
+     * @param url      音频直链（已通过 resolveDownload 核验下载权限）
      * @param quality  音质标识（standard / higher / exhigh / lossless）
      * @param lrcContent  歌词文本（.lrc 格式），null 表示无歌词不写文件
      * @param dirUri   SAF tree URI 字符串（空串或 null → 用默认目录）
@@ -62,7 +62,7 @@ object Downloader {
         runCatching {
             // 构造文件名：歌名 - 歌手.ext
             val ext = guessExtension(url)
-            val mime = if (ext == "flac") "audio/flac" else "audio/mpeg"
+            val mime = when (ext) { "flac" -> "audio/flac"; "m4a", "mp4" -> "audio/mp4"; "ogg" -> "audio/ogg"; "wav" -> "audio/wav"; else -> "audio/mpeg" }
             val safeName = buildSafeName(song)
             val audioFileName = "$safeName.$ext"
             val lrcFileName   = "$safeName.lrc"
@@ -71,16 +71,16 @@ object Downloader {
             val audioUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 if (!dirUri.isNullOrEmpty()) {
                     downloadStreamSafQ(context, dirUri, audioFileName, mime, url) { prog ->
-                        updateTask(song.id) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
+                        updateTask(song) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
                     }
                 } else {
                     downloadStreamMediaStore(context, audioFileName, mime, url) { prog ->
-                        updateTask(song.id) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
+                        updateTask(song) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
                     }
                 }
             } else {
                 downloadStreamPublicDir(audioFileName, url) { prog ->
-                    updateTask(song.id) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
+                    updateTask(song) { it.copy(status = DownloadStatus.DOWNLOADING, progress = prog) }
                 }
             }
 
@@ -102,10 +102,10 @@ object Downloader {
                 lrcPath   = lrcPath,
                 quality   = quality
             )
-            updateTask(song.id) { it.copy(status = DownloadStatus.DONE, progress = 1f, result = result) }
+            updateTask(song) { it.copy(status = DownloadStatus.DONE, progress = 1f, result = result) }
             result
         }.getOrElse { e ->
-            updateTask(song.id) { it.copy(status = DownloadStatus.FAILED, errorMsg = e.message) }
+            updateTask(song) { it.copy(status = DownloadStatus.FAILED, errorMsg = e.message) }
             throw e
         }
     }
@@ -114,12 +114,12 @@ object Downloader {
 
     private fun pushTask(task: DownloadTask) {
         _tasks.update { list ->
-            list.filter { it.song.id != task.song.id } + task
+            list.filter { it.song.id != task.song.id || it.song.source != task.song.source } + task
         }
     }
 
-    private fun updateTask(songId: Long, transform: (DownloadTask) -> DownloadTask) {
-        _tasks.update { list -> list.map { if (it.song.id == songId) transform(it) else it } }
+    private fun updateTask(song: Song, transform: (DownloadTask) -> DownloadTask) {
+        _tasks.update { list -> list.map { if (it.song.id == song.id && it.song.source == song.source) transform(it) else it } }
     }
 
     // 流式下载到 MediaStore（Android 10+）
@@ -314,6 +314,7 @@ object Downloader {
     private fun buildSafeName(song: Song): String = buildString {
         append(song.nm.ifBlank { "song_${song.id}" })
         if (song.ar.isNotBlank()) append(" - ").append(song.ar)
+        append(" [").append(song.source).append("-").append(song.id).append("]")
     }.replace(Regex("[/\\\\:*?\"<>|]"), "_")
 
     private fun guessExtension(url: String): String {
@@ -321,6 +322,10 @@ object Downloader {
         return when {
             path.endsWith(".flac", true) -> "flac"
             path.endsWith(".mp3", true)  -> "mp3"
+            path.endsWith(".m4a", true) -> "m4a"
+            path.endsWith(".mp4", true) -> "mp4"
+            path.endsWith(".ogg", true) -> "ogg"
+            path.endsWith(".wav", true) -> "wav"
             else -> "mp3"
         }
     }

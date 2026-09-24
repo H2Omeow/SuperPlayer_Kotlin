@@ -8,7 +8,8 @@
 - 🎵 在线播放网易云与酷狗音乐曲库
 - 💾 智能缓存，节省流量
 - 📥 本地下载，离线播放
-- 🎚️ 多档音质选择（标准/较高/极高/无损/Hi-Res/臻音全景声/沉浸环绕声/超清母带/Audio Vivid），根据网易云会员等级自动开放
+- 🎚️ 按歌曲查询实际音质与账户权限：优先默认音质，否则选最高可播放档位；下载单独核验可下载档位，排除试听链接
+- 原生 Kotlin 接口直连网易云与酷狗，音乐接口无需在手机内运行 Node.js 或依赖自建音乐 API 代理
 - ⏭️ 播放模式切换（顺序/循环/随机/单曲循环）
 - ⏩ 播放速度调节（0.5x - 2.0x）
 
@@ -49,6 +50,12 @@
 - ☁️ 云端收藏与歌单同步
 - 🔐 Cookie 管理
 - 📜 播放历史记录
+
+### 歌曲评论（1.0.9-pre）
+- 播放页提供网易云、酷狗、本站三个评论入口；跨平台同名歌曲先选择对应版本。
+- 网易云与本站支持分页、楼层回复、发送、点赞/取消点赞和删除本人评论；操作需登录对应站点。
+- 酷狗支持分页查看、发送和楼层回复。**酷狗点赞与删除尚缺已验证的接口协议，当前不开放这两项操作**。
+- 本站评论使用独立 SQLite 数据库；账号身份由服务端验证，删除本人评论后保留已有楼层回复。
 
 ### 高级功能
 - ⏰ 定时关闭
@@ -121,12 +128,12 @@ KEY_PASSWORD=your_key_password
 
 ## 许可证
 
-本项目采用 [许可证名称] 许可证 - 详见 [LICENSE](LICENSE) 文件。
+仓库尚未声明整体授权许可证。原生音乐接口参考项目的 MIT 许可全文随 APK 打包于 app/src/main/assets/licenses/，请同时遵循这些许可。
 
 ## 隐私说明
 
 - 本应用在用户通过 SSO 账户中心登录后，会将用户的播放记录、收藏、歌单等数据保存到本站服务器
-- **网易云 Cookie 会同步保存到云端**，用于多端同步和服务端代理请求（获取音质、歌单等需要会员凭据的接口）
+- **网易云 Cookie 会同步保存到云端**，用于多端同步；1.0.9-pre 的音乐接口由 App 使用该凭据直连对应音乐平台
 - 本站不保证数据绝对安全（如服务器遭到入侵等不可控因素）
 - 使用本站的云端同步功能即默认接受上述风险
 - 如不希望数据上传至服务器，请勿登录账户或使用云端同步功能
@@ -154,7 +161,22 @@ KEY_PASSWORD=your_key_password
 
 原 /kgapi/ 代理地址保持有效：platform=0 使用原版，platform=1 转发到本机概念版 4001。4001 只监听回环地址。更新上游 API 后需确认此路由仍安装。路由回归可运行 node --test deploy/kugou-platform-router.test.cjs。
 
+将 deploy/kugou-search.cjs 复制为 API 的 module/search.js 后重启两个酷狗进程。歌曲搜索使用带 Web 签名的 HTTPS 公共目录入口，修复 Android 搜索返回业务错误 152；返回歌曲仍由各平台登录会话验证播放和下载权限。
+
 验证码安全验证、短信限流和账号会员权限以酷狗服务端结果为准；应用不会将接口错误当作登录成功。旧收藏若未保存酷狗 hash，需要重新搜索添加。
+
+## 原生接口与本站评论部署
+
+1.0.9-pre 将现有音乐接口移植到 Kotlin/OkHttp，包含网易云 weapi/eapi 与酷狗原版/概念版签名、设备注册和会话隔离。参考 NeteaseCloudMusicApi 4.32.0、KuGouMusicApi 1.6.2，以及 KuGouMusicApi b624d645 的评论发送/回复实现。本站登录、云同步和本站评论仍需本站服务器。
+
+本站 Node.js 服务需要 Node 24（node:sqlite）。将 deploy/site-comments.mjs 放到服务目录，创建 Express 应用并安装现有会话中间件后、SPA 兜底路由之前调用：
+
+    import { installSiteComments } from './site-comments.mjs';
+    installSiteComments(app, { dataRoot, resolveUser, jsonParser: express.json({ limit: '16kb' }) });
+
+resolveUser(req) 必须验证请求的 Bearer JWT 并返回 { user: { id, username } }；无效凭据返回 null。写操作只接受经过验证的 Bearer 身份。数据库位于 dataRoot/comments/comments.sqlite，备份时保留数据库及 WAL 或使用 SQLite 一致性备份。
+
+测试：node --test deploy/*.test.*；Android 回归：./gradlew :app:testDebugUnitTest :app:lintDebug。设置 NATIVE_API_SMOKE=1 可额外运行不发送短信/评论的公开接口联通测试。网易云游客注册有时返回 code=400，上游 Node 模块亦复现，随后原生重测成功；应用保留真实错误，不生成假登录状态。扫码确认、真实账号评论写入、会员歌曲及 Android 真机播放仍需按对应账户与设备验收。
 
 ## 致谢
 

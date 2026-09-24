@@ -148,7 +148,7 @@ class KugouRepository(
 
     suspend fun search(keyword: String, page: Int = 1): List<Song> = optional {
         get("search", mapOf("keywords" to keyword, "page" to page.toString(), "pagesize" to "30"))
-            .payload().items("lists").map(::song)
+            .payload().let { it.items("lists").ifEmpty { it.items("info") } }.map(::song)
     }.orEmpty()
 
     suspend fun searchSuggest(keyword: String): List<String> = optional {

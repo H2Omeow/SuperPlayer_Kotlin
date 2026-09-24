@@ -1,5 +1,7 @@
 package top.nekoh2o.player.playback
 
+import top.nekoh2o.player.data.net.CookieStore
+
 import android.content.Intent
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
@@ -56,13 +58,15 @@ class PlaybackService : MediaSessionService() {
         val cacheFactory = MusicCache.dataSourceFactory(localAndHttpFactory)
         val settingsStore = SettingsStore(this)
 
-        val resolvingFactory = ResolvingDataSource.Factory(cacheFactory) { dataSpec ->
+        val playbackFactory = androidx.media3.datasource.DataSource.Factory {
+            if (settingsStore.load().cacheEnabled) cacheFactory.createDataSource() else localAndHttpFactory.createDataSource()
+        }
+        val resolvingFactory = ResolvingDataSource.Factory(playbackFactory) { dataSpec ->
             val raw = dataSpec.uri.toString()
 
             if (!raw.startsWith("neko:")) return@Factory dataSpec
 
             val song = SongPlaybackUri.decode(dataSpec.uri) ?: return@Factory dataSpec
-            val id = song.id
             val key = MusicCache.cacheKeyForSong(song)
 
             // 已下载文件优先直读。兼容旧版本保存的裸绝对路径。
@@ -75,24 +79,19 @@ class PlaybackService : MediaSessionService() {
                 }
             }
 
-            // 完整缓存无需联网取址；保留任意可解析 URI，只让 CacheDataSource 按 key 命中。
-            if (settingsStore.load().cacheEnabled && MusicCache.isFullyCached(key)) {
-                return@Factory dataSpec.buildUpon().setKey(key).build()
-            }
-
-            val realUrl = runCatching { runBlocking { repo.resolvePlayUrl(song) } }.getOrNull()
-            if (realUrl != null) {
-                val builder = dataSpec.buildUpon()
-                    .setUri(Uri.parse(realUrl))
-                    .setKey(key)
-                if (!settingsStore.load().cacheEnabled) {
-                    builder.setFlags(dataSpec.flags or androidx.media3.datasource.DataSpec.FLAG_DONT_CACHE_IF_LENGTH_UNKNOWN)
+            val audio = try { runBlocking {
+                top.nekoh2o.player.data.repo.SongQualityRepository().resolvePlayback(song, CookieStore.level)
+            } } catch (e: Exception) {
+                if (settingsStore.load().cacheEnabled) {
+                    MusicCache.offlineKey(song, CookieStore.level)?.let { cached ->
+                        return@Factory dataSpec.buildUpon().setKey(cached).build()
+                    }
                 }
-                builder.build()
-            } else {
-                // 取址失败时仍保留稳定 key，允许已有缓存尝试读取。
-                dataSpec.buildUpon().setKey(key).build()
+                throw java.io.IOException(e.message ?: "歌曲音质查询失败", e)
             }
+            if (audio == null) throw java.io.IOException("当前账号没有该歌曲的可播放音质")
+            val qualityKey = key + ":quality:" + audio.quality.id
+            dataSpec.buildUpon().setUri(Uri.parse(audio.url)).setKey(qualityKey).build()
         }
 
         val player = ExoPlayer.Builder(this)

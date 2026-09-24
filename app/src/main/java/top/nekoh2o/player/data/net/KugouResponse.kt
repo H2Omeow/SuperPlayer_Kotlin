@@ -17,7 +17,7 @@ internal fun Response<JsonObject>.kugouBody(): JsonObject {
     val body = body() ?: errorBody()?.use {
         runCatching { Json.parseToJsonElement(it.string()) as? JsonObject }.getOrNull()
     }
-    val error = body?.text("error_code", "errcode")?.toIntOrNull()
+    val error = body?.text("error_code", "errcode", "err_code")?.toIntOrNull()
     if (!isSuccessful || body == null || body.text("status") == "0" || (error != null && error != 0)) {
         val message = when (error) {
             20028 -> "酷狗要求安全验证，请先在官方 App 完成验证后重试，或使用扫码登录"

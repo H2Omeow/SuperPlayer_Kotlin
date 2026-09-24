@@ -64,6 +64,7 @@ import top.nekoh2o.player.data.model.LyricWord
 import top.nekoh2o.player.ui.PlayMode
 import top.nekoh2o.player.ui.PlayerViewModel
 import android.provider.Settings
+import androidx.compose.material.icons.filled.Comment
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Favorite
@@ -92,6 +93,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
     var showTimerDialog by remember { mutableStateOf(false) }
     var showFloatingPermDialog by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var showComments by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activeColor = MaterialTheme.colorScheme.primary
@@ -131,6 +133,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                 onShowSpeedDialog = { showSpeedDialog = true },
                 onShowTimerDialog = { showTimerDialog = true },
                 onShowQualityDialog = { showQualityDialog = true },
+                onShowComments = { showComments = true },
                 onShowFloatingPermDialog = { showFloatingPermDialog = true },
                 context = context
             )
@@ -148,12 +151,14 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                 onShowSpeedDialog = { showSpeedDialog = true },
                 onShowTimerDialog = { showTimerDialog = true },
                 onShowQualityDialog = { showQualityDialog = true },
+                onShowComments = { showComments = true },
                 onShowFloatingPermDialog = { showFloatingPermDialog = true },
                 context = context
             )
         }
     }
 
+    if (showComments && cur != null) SongCommentsSheet(cur) { showComments = false }
     if (showQueue) {
         QueueSheet(vm, onDismiss = { showQueue = false })
     }
@@ -192,6 +197,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
     }
     if (showQualityDialog) {
         QualityDialog(
+            song = cur,
             current = state.quality,
             onSelect = { q ->
                 showQualityDialog = false
@@ -203,46 +209,31 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
 }
 
 @Composable
-private fun QualityDialog(current: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
-    // value → label
-    val levels = listOf(
-        "standard" to "标准 128k",
-        "higher" to "较高 192k",
-        "exhigh" to "极高 320k",
-        "lossless" to "无损 SQ",
-        "hires" to "Hi-Res 无损 48kHz/16bit",
-        "jyeffect" to "高清臻音 96kHz/24bit",
-        "sky" to "沉浸环绕声 5.1声道",
-        "jymaster" to "超清母带 192kHz/24bit",
-        "dolby" to "臻音全景声 7.1.4声道"
-    )
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("下载音质") },
-        text = {
-            Column {
-                levels.forEach { (value, label) ->
-                    TextButton(
-                        onClick = { onSelect(value) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = NekoDefaults.textButtonColors()
-                    ) {
-                        Text(
-                            label,
-                            color = if (value == current) MaterialTheme.colorScheme.primary else TextMain,
-                            fontWeight = if (value == current) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
+private fun QualityDialog(song: top.nekoh2o.player.data.model.Song?, current: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    var options by remember(song) { mutableStateOf<List<top.nekoh2o.player.data.repo.AudioQuality>>(emptyList()) }
+    var loading by remember(song) { mutableStateOf(true) }
+    var error by remember(song) { mutableStateOf<String?>(null) }
+    var retry by remember { mutableIntStateOf(0) }
+    LaunchedEffect(song, retry) {
+        loading = true; error = null
+        try { options = song?.let { top.nekoh2o.player.data.repo.SongQualityRepository().downloadable(it) }.orEmpty() }
+        catch(e: kotlinx.coroutines.CancellationException) { throw e }
+        catch(e: Exception) { error = e.message ?: "音质查询失败" }
+        finally { loading = false }
+    }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("可下载音质") }, text = {
+        Column {
+            if(loading) { CircularProgressIndicator(); Text("正在查询歌曲音质和下载权限…") }
+            else if(error != null) { Text(error!!); TextButton(onClick = { retry++ }) { Text("重试") } }
+            else if(options.isEmpty()) Text("当前账号没有可下载音质，请登录对应音乐平台或检查歌曲版权。")
+            else LazyColumn { items(options, key = { it.id }) { option ->
+                TextButton(onClick = { onSelect(option.id) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(option.label + if(option.size > 0) " · " + "%.1f MB".format(option.size / 1048576.0) else "",
+                        fontWeight = if(option.id == top.nekoh2o.player.data.repo.SongQualityRepository.preferredFor(song?.source.orEmpty(),current)) FontWeight.Bold else FontWeight.Normal)
                 }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss, colors = NekoDefaults.textButtonColors()) {
-                Text("取消")
-            }
+            } }
         }
-    )
+    }, confirmButton = {}, dismissButton = { TextButton(onClick=onDismiss) { Text("取消") } })
 }
 
 @Composable
@@ -254,6 +245,7 @@ private fun ControlRow(
     onSpeedClick: () -> Unit,
     onTimerClick: () -> Unit,
     onDownloadClick: () -> Unit,
+    onCommentsClick: () -> Unit,
     onFavClick: () -> Unit,
     onFloatingClick: () -> Unit
 ) {
@@ -279,6 +271,9 @@ private fun ControlRow(
                 Icons.Filled.Timer, contentDescription = null,
                 tint = if (sleepMinutes > 0) MaterialTheme.colorScheme.primary else TextMain
             )
+        }
+        ControlItem(label = "评论", active = false, description = "查看歌曲评论", onClick = onCommentsClick) {
+            Icon(Icons.Filled.Comment, contentDescription = null, tint = TextMain)
         }
         ControlItem(
             label = "下载", active = false,
@@ -718,6 +713,7 @@ private fun LandscapePlayerLayout(
     onShowSpeedDialog: () -> Unit,
     onShowTimerDialog: () -> Unit,
     onShowQualityDialog: () -> Unit,
+    onShowComments: () -> Unit,
     onShowFloatingPermDialog: () -> Unit,
     context: android.content.Context
 ) {
@@ -797,6 +793,7 @@ private fun LandscapePlayerLayout(
                 onSpeedClick = onShowSpeedDialog,
                 onTimerClick = onShowTimerDialog,
                 onDownloadClick = { if (cur != null) onShowQualityDialog() },
+                onCommentsClick = { if (cur != null) onShowComments() },
                 onFavClick = { cur?.let { vm.toggleFav(it) } },
                 onFloatingClick = {
                     if (!Settings.canDrawOverlays(context)) onShowFloatingPermDialog()
@@ -906,6 +903,7 @@ private fun PortraitPlayerLayout(
     onShowSpeedDialog: () -> Unit,
     onShowTimerDialog: () -> Unit,
     onShowQualityDialog: () -> Unit,
+    onShowComments: () -> Unit,
     onShowFloatingPermDialog: () -> Unit,
     context: android.content.Context
 ) {
@@ -991,6 +989,7 @@ private fun PortraitPlayerLayout(
             onSpeedClick = onShowSpeedDialog,
             onTimerClick = onShowTimerDialog,
             onDownloadClick = { if (cur != null) onShowQualityDialog() },
+                onCommentsClick = { if (cur != null) onShowComments() },
             onFavClick = { cur?.let { vm.toggleFav(it) } },
             onFloatingClick = {
                 if (!Settings.canDrawOverlays(context)) onShowFloatingPermDialog()
