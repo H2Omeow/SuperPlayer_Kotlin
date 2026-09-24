@@ -101,9 +101,11 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.robolectric:robolectric:4.13")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime)
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
 

@@ -234,7 +234,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         if (song != null) {
             local.addHistory(song)
             pushMineToState()
-            loadLyric(song.id)
+            loadLyric(song)
         }
         // 自动保存播放状态
         saveCurrentPlaybackState()
@@ -301,7 +301,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private fun Song.toMediaItem(): MediaItem =
         MediaItem.Builder()
             .setMediaId(id.toString())
-            .setUri("neko:$id")
+            .setUri(top.nekoh2o.player.playback.SongPlaybackUri.encode(this))
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(nm)
@@ -331,55 +331,35 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ==================== 酷狗音乐相关 ====================
 
-    /**
-     * 酷狗发送验证码
-     */
-    fun kgSendCode(phone: String) {
-        viewModelScope.launch {
-            val success = kgRepo.sendCode(phone)
-            if (success) {
-                toast("验证码已发送")
-            } else {
-                toast("发送验证码失败")
-            }
-        }
+    suspend fun kgSendCode(phone: String, platform: Int) = kgRepo.sendCode(phone, platform)
+
+    suspend fun kgLogin(phone: String, code: String, platform: Int, userid: String? = null) {
+        completeKgLogin(kgRepo.login(phone, code, platform, userid), platform)
     }
 
-    /**
-     * 酷狗登录
-     */
-    fun kgLogin(phone: String, code: String, platform: Int) {
-        viewModelScope.launch {
-            CookieStore.setKgPlatform(platform)
-            val data = kgRepo.login(phone, code)
-            if (data != null) {
-                // 保存登录返回的 userid 和 dfid
-                CookieStore.setKgUserid(data.userid.toString())
-                CookieStore.setKgDfid(data.dfid)
-                toast("登录成功")
-                refreshKgAccount()
-            } else {
-                toast("登录失败")
-            }
-        }
+    suspend fun kgCreateLoginQR(platform: Int) = kgRepo.createLoginQR(platform)
+
+    suspend fun kgCheckLoginQR(session: top.nekoh2o.player.data.model.KgQrSession): top.nekoh2o.player.data.model.KgQrCheckResult {
+        val result = kgRepo.checkLoginQR(session)
+        result.account?.let { completeKgLogin(it, session.platform) }
+        return result
     }
 
-    /**
-     * 酷狗MID+Token登录
-     */
-    fun kgLoginWithToken(mid: String, token: String, platform: Int) {
+    private suspend fun completeKgLogin(account: top.nekoh2o.player.data.model.KgLoginData, platform: Int) {
+        CookieStore.setKgPlatform(platform)
+        _ui.value = _ui.value.copy(kgAccount = KgAccountState(userId = account.userid,
+            nickname = account.username.ifBlank { "酷狗用户" }, isValid = true, platform = platform))
+        toast("酷狗登录成功")
+        refreshKgAccount()
+        schedulePush()
+    }
+
+    fun clearKgAccount() {
         viewModelScope.launch {
-            CookieStore.setKgPlatform(platform)
-            CookieStore.setKgToken(token)
-            // MID就是userid
-            CookieStore.setKgUserid(mid)
-            // 获取dfid
-            val dfid = kgRepo.getDfid()
-            if (dfid != null) {
-                CookieStore.setKgDfid(dfid)
-            }
-            toast("登录成功")
-            refreshKgAccount()
+            CookieStore.clearKgToken()
+            _ui.value = _ui.value.copy(kgAccount = KgAccountState(platform = CookieStore.kgPlatformValue()))
+            schedulePush()
+            toast("已退出当前酷狗账号")
         }
     }
 
@@ -388,8 +368,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun refreshKgAccount() {
         viewModelScope.launch {
-            val userInfo = kgRepo.getUserInfo()
-            val vipInfo = kgRepo.getVipInfo()
+            val platform = CookieStore.kgPlatformValue()
+            val token = CookieStore.kgTokenValue(platform)
+            val userInfo = kgRepo.getUserInfo(platform)
+            val vipInfo = kgRepo.getVipInfo(platform)
+            if (platform != CookieStore.kgPlatformValue() || token != CookieStore.kgTokenValue(platform)) return@launch
             if (userInfo != null) {
                 _ui.value = _ui.value.copy(
                     kgAccount = KgAccountState(
@@ -426,8 +409,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             CookieStore.setKgPlatform(platform)
             _ui.value = _ui.value.copy(
-                kgAccount = _ui.value.kgAccount.copy(platform = platform)
+                kgAccount = KgAccountState(platform = platform)
             )
+            refreshKgAccount()
+            schedulePush()
             toast("已切换到${if (platform == 0) "原版" else "概念版"}")
         }
     }
@@ -620,18 +605,21 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ==================== 歌词 ====================
-    private fun loadLyric(id: Long) {
+    private fun loadLyric(song: Song) {
         viewModelScope.launch {
             // 已下载且带本地 .lrc → 优先读本地，不走网络
-            val localLrc = DownloadIndex.get(id)?.lrcPath?.let {
+            val localLrc = DownloadIndex.get(song)?.lrcPath?.let {
                 LyricManager.readLrcFile(getApplication(), it)
             }
             val lys = if (!localLrc.isNullOrBlank()) {
                 LyricParser.parse(localLrc)
             } else {
-                runCatching { repo.lyric(id) }.getOrDefault(emptyList())
+                runCatching { repo.lyric(song) }.getOrDefault(emptyList())
             }
-            _ui.value = _ui.value.copy(lyrics = lys, lyricIndex = -1)
+            val current = queue.getOrNull(_ui.value.currentIndex)
+            if (current?.id == song.id && current.source == song.source) {
+                _ui.value = _ui.value.copy(lyrics = lys, lyricIndex = -1)
+            }
         }
     }
 
@@ -834,16 +822,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun saveKgToken(token: String, platform: Int) {
-        kugouVm.saveToken(token, platform) {
-            schedulePush()
-            toast("酷狗 Token 已保存")
-            if (token.isNotEmpty()) {
-                refreshKgAccount()
-            }
-        }
-    }
-
     fun clearNcCookie() {
         neteaseVm.clearNcCookie()
         _ui.value = _ui.value.copy(ncCookie = "")
@@ -892,8 +870,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 删除一首已下载歌曲（同时删除索引和文件）。 */
-    fun removeDownloaded(songId: Long) {
-        downloadVm.removeDownloaded(songId)
+    fun removeDownloaded(song: Song) {
+        downloadVm.removeDownloaded(song)
         _ui.value = _ui.value.copy(downloadedSongs = DownloadIndex.all())
         toast("已删除")
     }
@@ -1026,8 +1004,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 CookieStore.setUserCookie(remote.ncCookie)
             }
             if (remote.kgToken.isNotEmpty()) {
-                CookieStore.setKgToken(remote.kgToken)
                 CookieStore.setKgPlatform(remote.kgPlatform)
+                CookieStore.setKgToken(remote.kgToken)
             }
             pushMineToState()
             schedulePush()
@@ -1187,51 +1165,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ==================== 提示 ====================
     fun toast(msg: String) { _ui.value = _ui.value.copy(toast = msg) }
     fun clearToast() { _ui.value = _ui.value.copy(toast = null) }
-
-    // ==================== 酷狗 QQ 登录 ====================
-
-    /**
-     * QQ授权登录
-     */
-    fun kgLoginWithQQ(openid: String, accessToken: String) {
-        viewModelScope.launch {
-            val data = kgRepo.loginWithQQ(openid, accessToken)
-            if (data != null) {
-                toast("QQ登录成功")
-                refreshKgAccount()
-            } else {
-                toast("QQ登录失败")
-            }
-        }
-    }
-
-    /**
-     * 拉起手机 QQ 登录
-     */
-    fun launchQQLogin(appId: String = "102058589") {
-        val context = getApplication<Application>()
-        val helper = top.nekoh2o.player.utils.QQLoginHelper
-        if (!helper.isQQInstalled(context)) {
-            toast("手机未安装QQ，请先安装QQ或使用其他登录方式")
-            return
-        }
-        val success = helper.launchQQLogin(context, appId)
-        if (!success) {
-            toast("拉起QQ失败，请使用其他登录方式")
-        }
-    }
-
-    /**
-     * 创建QQ扫码登录二维码
-     */
-    suspend fun kgCreateQQLoginQR(): top.nekoh2o.player.data.model.KgQQQRCreateData? =
-        kugouVm.createQQLoginQR()
-
-    /**
-     * 检查QQ扫码登录状态
-     */
-    suspend fun kgCheckQQLoginQR(qrData: top.nekoh2o.player.data.model.KgQQQRCreateData): top.nekoh2o.player.data.model.KgQQQRCheckResp? =
-        kugouVm.checkQQLoginQR(qrData)
 
     // ==================== 播放状态保存/恢复 ====================
 

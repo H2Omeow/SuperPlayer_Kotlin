@@ -32,15 +32,15 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
     val active = state.downloadTasks.filter { it.status != DownloadStatus.DONE }
     val done = state.downloadedSongs
 
-    var showDeleteConfirm by remember { mutableStateOf<Long?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf<top.nekoh2o.player.data.model.Song?>(null) }
 
     // 删除确认对话框
     if (showDeleteConfirm != null) {
-        val song = done.find { it.songId == showDeleteConfirm }
+        val song = showDeleteConfirm
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
             title = { Text("删除文件") },
-            text = { Text("确定要删除「${song?.song?.nm ?: "该歌曲"}」及其文件吗？此操作不可撤销。") },
+            text = { Text("确定要删除「${song?.nm ?: "该歌曲"}」及其文件吗？此操作不可撤销。") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -83,7 +83,7 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                         modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
                     )
                 }
-                items(active, key = { it.song.id }) { task ->
+                items(active, key = { it.song.source + ":" + it.song.id }) { task ->
                     ActiveTaskRow(
                         task = task,
                         onRetry = { vm.retryDownload(task.song, task.quality) },
@@ -113,11 +113,11 @@ fun DownloadManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                         modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
                     )
                 }
-                items(done, key = { it.songId }) { d ->
+                items(done, key = { it.song.source + ":" + it.songId }) { d ->
                     DownloadedRow(
                         item = d,
                         onPlay = { vm.playNow(d.song) },
-                        onRemove = { showDeleteConfirm = d.songId },
+                        onRemove = { showDeleteConfirm = d.song },
                         modifier = Modifier.animateItem(
                             fadeInSpec = androidx.compose.animation.core.spring(
                                 dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,

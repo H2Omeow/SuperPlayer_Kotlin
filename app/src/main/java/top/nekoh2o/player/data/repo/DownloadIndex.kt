@@ -15,31 +15,37 @@ object DownloadIndex {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private lateinit var prefs: SharedPreferences
-    private val songs = mutableMapOf<Long, DownloadedSong>()
+    private val songs = java.util.concurrent.ConcurrentHashMap<String, DownloadedSong>()
 
-    fun init(context: Context) {
+    @Synchronized fun init(context: Context) {
         prefs = context.applicationContext.getSharedPreferences("download_index", Context.MODE_PRIVATE)
+        songs.clear()
         load()
     }
 
-    fun isDownloaded(songId: Long): Boolean = songs.containsKey(songId)
+    fun isDownloaded(songId: Long): Boolean = songs.containsKey("netease:" + songId)
 
-    fun get(songId: Long): DownloadedSong? = songs[songId]
+    fun get(songId: Long): DownloadedSong? = songs["netease:" + songId]
 
-    fun add(entry: DownloadedSong) {
-        songs[entry.songId] = entry
+    private fun key(song: Song) = song.source + ":" + song.id
+    fun get(song: Song): DownloadedSong? = songs[key(song)]
+    fun isDownloaded(song: Song): Boolean = songs.containsKey(key(song))
+    @Synchronized fun remove(song: Song) { songs.remove(key(song)); persist() }
+
+    @Synchronized fun add(entry: DownloadedSong) {
+        songs[key(entry.song)] = entry
         persist()
     }
 
-    fun remove(songId: Long) {
-        songs.remove(songId)
+    @Synchronized fun remove(songId: Long) {
+        songs.remove("netease:" + songId)
         persist()
     }
 
     fun all(): List<DownloadedSong> = songs.values.sortedByDescending { it.downloadedAt }
 
     /** 快速查歌曲（供缓存管理等界面使用）。 */
-    fun findSong(songId: Long): Song? = songs[songId]?.song
+    fun findSong(songId: Long): Song? = songs["netease:" + songId]?.song
 
     private fun load() {
         val raw = prefs.getString("entries", null) ?: return
@@ -47,13 +53,13 @@ object DownloadIndex {
             json.decodeFromString<List<DownloadedSongSurrogate>>(raw).forEach { s ->
                 val entry = DownloadedSong(
                     songId = s.songId,
-                    song = Song(s.songId, s.nm, s.ar, s.pc),
+                    song = Song(s.songId, s.nm, s.ar, s.pc, s.source, s.hash, s.albumId, s.albumAudioId),
                     audioUri = s.audioUri,
                     lrcPath = s.lrcPath,
                     quality = s.quality,
                     downloadedAt = s.downloadedAt
                 )
-                songs[entry.songId] = entry
+                songs[key(entry.song)] = entry
             }
         }
     }
@@ -68,7 +74,8 @@ object DownloadIndex {
                 audioUri = e.audioUri,
                 lrcPath = e.lrcPath,
                 quality = e.quality,
-                downloadedAt = e.downloadedAt
+                downloadedAt = e.downloadedAt,
+                source = e.song.source, hash = e.song.hash, albumId = e.song.albumId, albumAudioId = e.song.albumAudioId
             )
         }
         prefs.edit().putString("entries", json.encodeToString(list)).apply()
@@ -84,6 +91,10 @@ object DownloadIndex {
         val audioUri: String,
         val lrcPath: String? = null,
         val quality: String = "exhigh",
-        val downloadedAt: Long = 0L
+        val downloadedAt: Long = 0L,
+        val source: String = "netease",
+        val hash: String = "",
+        val albumId: String = "",
+        val albumAudioId: Long = 0L
     )
 }

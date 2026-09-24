@@ -44,30 +44,16 @@ object ApiFactory {
                 val req = chain.request()
                 val token = CookieStore.appTokenValue()
                 if (req.url.host == PLAYER_HOST) {
-                    android.util.Log.d("ApiFactory", "Interceptor for ${req.url} - token: ${token.take(20)}... (len=${token.length})")
                     if (token.isNotEmpty()) {
-                        val resp = chain.proceed(
-                            req.newBuilder()
-                                .header("Authorization", "Bearer $token")
-                                .build()
-                        )
-                        // 401 时记录完整 token 用于调试（不能读取 body，会导致流关闭）
-                        if (resp.code == 401) {
-                            android.util.Log.e("ApiFactory", "HTTP 401 for ${req.url}")
-                            android.util.Log.e("ApiFactory", "Full token: $token")
-                        }
-                        resp
-                    } else {
-                        android.util.Log.w("ApiFactory", "Token is EMPTY for player API request!")
-                        chain.proceed(req)
-                    }
+                        chain.proceed(req.newBuilder().header("Authorization", "Bearer " + token).build())
+                    } else chain.proceed(req)
                 } else {
                     chain.proceed(req)
                 }
             }
             .addInterceptor(
                 HttpLoggingInterceptor().apply {
-                    level = HttpLoggingInterceptor.Level.BASIC
+                    level = HttpLoggingInterceptor.Level.NONE
                 }
             )
             .build()
@@ -76,10 +62,10 @@ object ApiFactory {
         ready.complete(Unit)
     }
 
-    private fun retrofit(baseUrl: String): Retrofit {
+    private fun retrofit(baseUrl: String, client: OkHttpClient = httpClient): Retrofit {
         return Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(httpClient)
+            .client(client)
             .addConverterFactory(
                 json.asConverterFactory(
                     "application/json".toMediaType()
@@ -101,7 +87,12 @@ object ApiFactory {
     }
 
     val kugou: KugouApi by lazy {
-        retrofit(BASE).create(KugouApi::class.java)
+        val client = httpClient.newBuilder()
+            .cookieJar(okhttp3.CookieJar.NO_COOKIES)
+            .apply { interceptors().clear() }
+            .addInterceptor(KugouInterceptor(CookieStore.kgSessions))
+            .build()
+        retrofit(BASE, client).create(KugouApi::class.java)
     }
 
     fun client(): OkHttpClient = httpClient

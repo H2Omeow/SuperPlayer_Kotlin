@@ -1,422 +1,247 @@
 package top.nekoh2o.player.data.repo
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.*
 import top.nekoh2o.player.data.model.*
-import top.nekoh2o.player.data.net.ApiFactory
-import top.nekoh2o.player.data.net.CookieStore
+import top.nekoh2o.player.data.net.*
+import retrofit2.Response
 
-/**
- * 酷狗音乐数据仓库
- */
-class KugouRepository {
+/** Server API adapter. All requests retain the selected platform and its device session. */
+class KugouRepository(
+    private val suppliedApi: KugouApi? = null,
+    private val suppliedSessions: KugouSessionStore? = null
+) {
+    private val api get() = suppliedApi ?: ApiFactory.kugou
+    private val sessions get() = suppliedSessions ?: CookieStore.kgSessions
 
-    private val api = ApiFactory.kugou
-
-    /**
-     * 初始化：确保 dfid 存在
-     * 应在应用启动或首次使用酷狗功能时调用
-     */
-    suspend fun ensureInitialized() {
-        // 如果已有 dfid，跳过
-        if (CookieStore.kgDfidValue().isNotEmpty()) return
-        // 获取并保存 dfid
-        getDfid()
+    private suspend fun ready() {
+        if (suppliedApi == null) { CookieStore.awaitReady(); ApiFactory.awaitReady() }
     }
 
-    // ==================== 登录相关 ====================
+    suspend fun ensureInitialized(platform: Int = CookieStore.kgPlatformValue()) {
+        ready()
+        initialization[platform].withLock {
+            if (sessions.value(platform, "dfid").isNotBlank()) return
+            val body = api.get("register/dev", platform).kugouBody()
+            val dfid = body.payload().text("dfid")
+            if (dfid.isBlank()) throw KugouApiException("酷狗设备初始化失败，请重试")
+            sessions.merge(platform, mapOf("dfid" to dfid))
+        }
+    }
 
-    /**
-     * 发送验证码
-     */
-    suspend fun sendCode(phone: String): Boolean =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.sendCode(phone, platform, cookie)
-            resp.status == 1
-        }.getOrDefault(false)
+    suspend fun getDfid(): String? = optional {
+        val platform = CookieStore.kgPlatformValue()
+        ensureInitialized(platform)
+        sessions.value(platform, "dfid")
+    }
 
-    /**
-     * 手机号登录
-     */
-    suspend fun login(phone: String, code: String): KgLoginData? =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.login(phone, code, platform, cookie)
-            if (resp.status == 1 && resp.data != null) {
-                // 保存token、userid、dfid
-                CookieStore.setKgToken(resp.data.token)
-                CookieStore.setKgUserid(resp.data.userid.toString())
-                if (resp.data.dfid.isNotEmpty()) {
-                    CookieStore.setKgDfid(resp.data.dfid)
-                }
-                resp.data
-            } else null
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "login() failed: ${e.message}", e)
-        }.getOrNull()
+    suspend fun sendCode(phone: String, platform: Int) {
+        require(phone.matches(Regex("1[3-9][0-9]{9}"))) { "请输入有效的大陆手机号" }
+        ensureInitialized(platform)
+        val result = api.post("captcha/sent", platform, mapOf("mobile" to phone)).kugouBody()
+        if (result.text("status") != "1" && result.text("code") != "200") {
+            throw KugouApiException("酷狗未确认验证码发送成功，请稍后重试")
+        }
+    }
 
-    /**
-     * 刷新登录
-     */
-    suspend fun refreshLogin(): Boolean =
-        runCatching {
-            val token = CookieStore.kgTokenValue()
-            if (token.isEmpty()) return@runCatching false
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.refreshLogin(token, platform, cookie)
-            if (resp.status == 1 && resp.data != null) {
-                CookieStore.setKgToken(resp.data.token)
-                true
-            } else false
-        }.getOrDefault(false)
+    suspend fun login(phone: String, code: String, platform: Int, userid: String? = null): KgLoginData {
+        require(phone.matches(Regex("1[3-9][0-9]{9}"))) { "请输入有效的大陆手机号" }
+        require(code.matches(Regex("[0-9]{4,8}"))) { "请输入有效验证码" }
+        ensureInitialized(platform)
+        val fields = mutableMapOf("mobile" to phone, "code" to code)
+        userid?.takeIf { it.toLongOrNull()?.let { id -> id > 0 } == true }?.let { fields["userid"] = it }
+        val response = api.post("login/cellphone", platform, fields)
+        val body = response.kugouBody()
+        val data = body.payload()
+        if (data.text("token").isBlank()) {
+            val accounts = data.values.filterIsInstance<JsonArray>().flatMap { it.filterIsInstance<JsonObject>() }
+                .filter { it.number("userid") > 0 }.map { KgLoginAccount(it.number("userid"), it.text("nickname", "username")) }
+                .distinctBy { it.userid }
+            if (accounts.isNotEmpty()) throw KugouAccountSelection(accounts)
+        }
+        return acceptLogin(platform, response, data)
+    }
 
-    /**
-     * 获取DFID（设备指纹）
-     */
-    suspend fun getDfid(): String? =
-        runCatching {
-            val resp = api.getDfid()
-            if (resp.status == 1 && resp.data?.dfid?.isNotEmpty() == true) {
-                // 保存dfid到CookieStore
-                CookieStore.setKgDfid(resp.data.dfid)
-                resp.data.dfid
-            } else null
-        }.getOrNull()
+    suspend fun createLoginQR(platform: Int): KgQrSession {
+        ensureInitialized(platform)
+        val key = api.get("login/qr/key", platform).kugouBody().payload().text("qrcode", "key", "unikey")
+        if (key.isBlank()) throw KugouApiException("酷狗未返回二维码标识，请重试")
+        val image = api.get("login/qr/create", platform, mapOf("key" to key, "qrimg" to "true"))
+            .kugouBody().payload().text("base64", "qrcode_img", "qrimg")
+        if (image.isBlank()) throw KugouApiException("酷狗未返回二维码图片，请重试")
+        return KgQrSession(key, image, platform)
+    }
 
-    // ==================== 用户信息 ====================
+    suspend fun checkLoginQR(session: KgQrSession): KgQrCheckResult {
+        ready()
+        val response = api.get("login/qr/check", session.platform, mapOf("key" to session.key))
+        val data = response.kugouBody().payload()
+        val status = data.text("status").toIntOrNull()
+            ?: throw KugouApiException("无法识别酷狗扫码状态，请刷新二维码")
+        if (status !in setOf(0, 1, 2, 4)) throw KugouApiException("酷狗扫码授权失败，请刷新二维码")
+        return KgQrCheckResult(status, if (status == 4) acceptLogin(session.platform, response, data) else null)
+    }
 
-    /**
-     * 获取用户信息
-     */
-    suspend fun getUserInfo(): KgUserInfo? =
-        runCatching {
-            val token = CookieStore.kgTokenValue()
-            if (token.isEmpty()) return@runCatching null
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getUserInfo(token, platform, cookie)
-            if (resp.status == 1) resp.data else null
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "getUserInfo() failed: ${e.message}", e)
-        }.getOrNull()
+    private suspend fun acceptLogin(platform: Int, response: Response<JsonObject>, data: JsonObject): KgLoginData {
+        val token = data.text("token")
+        val userid = data.number("userid")
+        if (token.isBlank() || token in setOf("undefined", "null") || userid <= 0) {
+            throw KugouApiException("酷狗未返回有效登录凭据，请重新扫码或使用验证码登录")
+        }
+        currentCoroutineContext().ensureActive()
+        sessions.commitLogin(platform, response.raw().request.url, response.headers().values("Set-Cookie"), token, userid, data.text("dfid"))
+        return KgLoginData(token, userid, data.text("nickname", "username"), sessions.value(platform, "dfid"))
+    }
 
-    /**
-     * 获取VIP信息
-     */
-    suspend fun getVipInfo(): KgVipInfo? =
-        runCatching {
-            val token = CookieStore.kgTokenValue()
-            if (token.isEmpty()) return@runCatching null
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getVipInfo(token, platform, cookie)
-            if (resp.status == 1) resp.data else null
-        }.getOrNull()
+    suspend fun refreshLogin(): Boolean = optional {
+        val platform = CookieStore.kgPlatformValue()
+        ready()
+        if (sessions.value(platform, "token").isEmpty()) return@optional false
+        val response = api.get("login/token", platform)
+        val data = response.kugouBody().payload()
+        val token = data.text("token")
+        if (token.isEmpty()) return@optional false
+        currentCoroutineContext().ensureActive()
+        sessions.mergeResponse(platform, response.raw().request.url, response.headers().values("Set-Cookie"), true)
+        sessions.merge(platform, mapOf("token" to token))
+        true
+    } ?: false
 
-    // ==================== 歌单相关 ====================
+    private suspend fun get(endpoint: String, parameters: Map<String, String> = emptyMap(), platform: Int = CookieStore.kgPlatformValue()): JsonObject {
+        ensureInitialized(platform)
+        return api.get(endpoint, platform, parameters).kugouBody()
+    }
 
-    /**
-     * 获取用户歌单
-     */
-    suspend fun getUserPlaylists(): List<KgPlaylistItem> =
-        runCatching {
-            val token = CookieStore.kgTokenValue()
-            if (token.isEmpty()) return@runCatching emptyList()
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getUserPlaylist(token, platform, cookie)
-            if (resp.status == 1) resp.data?.info ?: emptyList() else emptyList()
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "getUserPlaylists() failed: ${e.message}", e)
-        }.getOrDefault(emptyList())
+    suspend fun getUserInfo(platform: Int = CookieStore.kgPlatformValue()): KgUserInfo? = optional {
+        ready()
+        if (sessions.value(platform, "token").isBlank()) return@optional null
+        val data = get("user/detail", platform = platform).payload()
+        val info = data.obj("userinfo").ifEmpty { data }
+        KgUserInfo(
+            userid = info.number("userid").takeIf { it > 0 } ?: sessions.value(platform, "userid").toLongOrNull() ?: 0,
+            username = info.text("username"), nickname = info.text("nickname", "nick_name", "username"),
+            avatar = info.text("pic", "avatar", "picurl")
+        )
+    }
 
-    /**
-     * 获取歌单详情及歌曲列表
-     */
-    suspend fun getPlaylistDetail(specialId: Long): List<Song> =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getPlaylistDetail(specialId, platform, cookie)
-            if (resp.status == 1) {
-                resp.data?.list?.list?.info?.map { it.toSong() } ?: emptyList()
-            } else emptyList()
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "getPlaylistDetail() failed: ${e.message}", e)
-        }.getOrDefault(emptyList())
+    suspend fun getVipInfo(platform: Int = CookieStore.kgPlatformValue()): KgVipInfo? = optional {
+        val data = get("user/vip/detail", platform = platform).payload()
+        val info = data.obj("vip").ifEmpty { data }
+        KgVipInfo(info.number("vip_type", "vip_level").toInt(), info.text("vip_token"), info.number("end_time", "vip_end_time"))
+    }
 
-    // ==================== 搜索相关 ====================
+    suspend fun getUserPlaylists(): List<KgPlaylistItem> = optional {
+        val data = get("user/playlist").payload()
+        data.items("info").ifEmpty { data.items("list") }.map {
+            KgPlaylistItem(it.number("listid", "specialid"), it.text("name", "specialname"), it.text("pic", "imgurl"), it.number("count", "songcount").toInt(), it.text("global_collection_id"))
+        }
+    }.orEmpty()
 
-    /**
-     * 搜索歌曲
-     */
-    suspend fun search(keyword: String, page: Int = 1): List<Song> =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.search(keyword, page, 30, "song", platform, cookie)
-            if (resp.status == 1) {
-                resp.data?.lists?.map { it.toSong() } ?: emptyList()
-            } else emptyList()
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "search() failed: ${e.message}", e)
-        }.getOrDefault(emptyList())
+    suspend fun getPlaylistDetail(collectionId: String): List<Song> = optional {
+        val data = get("playlist/track/all", mapOf("id" to collectionId, "pagesize" to "100")).payload()
+        data.items("songs").ifEmpty { data.items("info") }.map(::song)
+    }.orEmpty()
 
-    /**
-     * 搜索建议
-     */
-    suspend fun searchSuggest(keyword: String): List<String> =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.searchSuggest(keyword, platform, cookie)
-            if (resp.status == 1) {
-                resp.data?.song?.map { it.songname } ?: emptyList()
-            } else emptyList()
-        }.getOrDefault(emptyList())
+    suspend fun search(keyword: String, page: Int = 1): List<Song> = optional {
+        get("search", mapOf("keywords" to keyword, "page" to page.toString(), "pagesize" to "30"))
+            .payload().items("lists").map(::song)
+    }.orEmpty()
 
-    // ==================== 歌曲相关 ====================
+    suspend fun searchSuggest(keyword: String): List<String> = optional {
+        val data = get("search/suggest", mapOf("keywords" to keyword)).payload()
+        data.items("list").flatMap { it.items("RecordDatas") }.map { it.text("HintInfo") }.filter(String::isNotBlank)
+            .ifEmpty { data.items("song").map { it.text("songname") } }.distinct()
+    }.orEmpty()
 
-    /**
-     * 获取歌曲播放URL
-     */
-    suspend fun getSongUrl(hash: String, quality: String = "320"): String? =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getSongUrl(hash, quality, platform, cookie)
-            if (resp.status == 1) {
-                resp.data?.play_url?.ifEmpty { resp.data.play_backup_url }
-            } else null
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "getSongUrl() failed: ${e.message}", e)
-        }.getOrNull()
+    suspend fun getSongUrl(hash: String, quality: String = "320"): String? = optional {
+        require(hash.matches(Regex("[a-fA-F0-9]{32}"))) { "歌曲缺少酷狗 hash，请重新搜索并添加该歌曲" }
+        val data = get("song/url", mapOf("hash" to hash, "quality" to quality)).payload()
+        playableUrl(data)
+    }
 
-    /**
-     * 获取歌曲可用音质列表
-     */
-    suspend fun getSongQualities(hash: String): List<KgQualityItem> =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getSongUrlNew(hash, platform, cookie)
-            if (resp.status == 1) {
-                resp.data?.qualities ?: emptyList()
-            } else emptyList()
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "getSongQualities() failed: ${e.message}", e)
-        }.getOrDefault(emptyList())
+    suspend fun getSongQualities(hash: String): List<KgQualityItem> = optional {
+        val body = get("privilege/lite", mapOf("hash" to hash))
+        val data = body.items("data").firstOrNull() ?: body.payload()
+        data.items("relate_goods").mapNotNull { item ->
+            val info = item.obj("info")
+            val quality = when (info.number("bitrate")) { 128L -> "128"; 320L -> "320"; else -> if (info.text("extname") == "flac") "flac" else null }
+            quality?.let { KgQualityItem(it, if (it == "flac") "无损" else it + " kbps", info.number("bitrate").toInt()) }
+        }.distinctBy { it.quality }
+    }.orEmpty()
 
-    /**
-     * 获取歌词
-     */
-    suspend fun getLyric(hash: String): String? =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getLyric(hash, platform, cookie)
-            if (resp.status == 1) resp.data?.lyrics else null
-        }.getOrNull()
+    suspend fun getLyric(hash: String): String? = optional {
+        require(hash.matches(Regex("[a-fA-F0-9]{32}")))
+        val candidates = get("search/lyric", mapOf("hash" to hash)).items("candidates")
+        val candidate = candidates.firstOrNull { it.text("id").isNotBlank() && it.text("accesskey").isNotBlank() } ?: return@optional null
+        val result = get("lyric", mapOf("id" to candidate.text("id"), "accesskey" to candidate.text("accesskey"), "fmt" to "lrc", "decode" to "true"))
+        result.text("decodeContent").ifBlank {
+            result.text("content").takeIf(String::isNotBlank)?.let { String(android.util.Base64.decode(it, android.util.Base64.DEFAULT), Charsets.UTF_8) }.orEmpty()
+        }.takeIf(String::isNotBlank)
+    }
 
-    /**
-     * 获取歌曲详情
-     */
-    suspend fun getSongDetail(hash: String): KgSongDetail? =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getSongDetail(hash, platform, cookie)
-            if (resp.status == 1) resp.data else null
-        }.getOrNull()
+    suspend fun getSongDetail(hash: String): KgSongDetail? = optional {
+        val body = get("privilege/lite", mapOf("hash" to hash))
+        val data = body.items("data").firstOrNull() ?: return@optional null
+        KgSongDetail(data.number("audio_id"), data.text("hash"), data.number("album_audio_id"), data.text("songname", "song_name"), data.text("singername", "author_name"), data.text("img"))
+    }
 
-    // ==================== VIP领取（概念版）====================
+    suspend fun receiveVip(vipType: Int = 1, days: Int = 1): String? = optional {
+        if (CookieStore.kgPlatformValue() != 1) return@optional "此功能仅限概念版"
+        val data = get("youth/day/vip", mapOf("receive_day" to "1")).payload()
+        data.text("message", "msg").ifEmpty { "已提交领取，请刷新账号查看实际权益" }
+    }
 
-    /**
-     * 领取VIP（仅概念版）
-     */
-    suspend fun receiveVip(vipType: Int = 1, days: Int = 7): String? =
-        runCatching {
-            val token = CookieStore.kgTokenValue()
-            if (token.isEmpty()) return@runCatching null
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.receiveVip(token, vipType, days, 1, cookie)
-            if (resp.status == 1) resp.data?.result else resp.error_msg
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "receiveVip() failed: ${e.message}", e)
-        }.getOrNull()
+    suspend fun getFollowArtists(): List<KgArtistItem> = optional {
+        get("user/follow").payload().items("info").map { KgArtistItem(it.number("singerid", "userid"), it.text("singername", "nickname"), it.text("imgurl", "pic")) }
+    }.orEmpty()
 
-    // ==================== 歌手相关 ====================
+    suspend fun getArtistSongs(singerId: Long): List<Song> = optional {
+        get("artist/audios", mapOf("id" to singerId.toString(), "pagesize" to "50")).payload().items("info").map(::song)
+    }.orEmpty()
 
-    /**
-     * 获取用户关注的歌手
-     */
-    suspend fun getFollowArtists(): List<KgArtistItem> =
-        runCatching {
-            val token = CookieStore.kgTokenValue()
-            if (token.isEmpty()) return@runCatching emptyList()
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getFollowArtists(token, platform, cookie)
-            if (resp.status == 1) resp.data?.info ?: emptyList() else emptyList()
-        }.getOrDefault(emptyList())
+    suspend fun getUserHistory(): List<Song> = optional {
+        val data = get("user/history").payload()
+        data.items("info").ifEmpty { data.items("list") }.map(::song)
+    }.orEmpty()
 
-    /**
-     * 获取歌手歌曲
-     */
-    suspend fun getArtistSongs(singerId: Long): List<Song> =
-        runCatching {
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getArtistSongs(singerId, 1, 50, platform, cookie)
-            if (resp.status == 1) {
-                resp.data?.lists?.map { it.toSong() } ?: emptyList()
-            } else emptyList()
-        }.getOrDefault(emptyList())
+    suspend fun getRecommendSongs(): List<Song> = optional {
+        val data = get("personal/fm").payload()
+        data.items("song_list").ifEmpty { data.items("lists") }.map(::song)
+    }.orEmpty()
 
-    // ==================== 音乐历史 ====================
+    private suspend fun <T> optional(block: suspend () -> T): T? = try { block() } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
 
-    /**
-     * 获取用户听歌历史
-     */
-    suspend fun getUserHistory(): List<Song> =
-        runCatching {
-            val token = CookieStore.kgTokenValue()
-            if (token.isEmpty()) return@runCatching emptyList()
-            val platform = CookieStore.kgPlatformValue()
-            val cookie = CookieStore.kgCookieValue()
-            val resp = api.getUserHistory(token, platform, cookie)
-            if (resp.status == 1) {
-                resp.data?.info?.map { it.toSong() } ?: emptyList()
-            } else emptyList()
-        }.getOrDefault(emptyList())
+    companion object {
+        private val initialization = Array(2) { Mutex() }
 
-    /**
-     * 获取推荐歌曲（个人 FM）
-     */
-    suspend fun getRecommendSongs(): List<Song> =
-        runCatching {
-            val cookie = CookieStore.kgCookieValue()
-            if (cookie.isEmpty()) return@runCatching emptyList()
-            val platform = CookieStore.kgPlatformValue()
-            val resp = api.getRecommendSongs(cookie, platform)
-            if (resp.status == 1) {
-                // 个人 FM 返回 song_list 字段，不是 lists
-                resp.data?.songList?.map { it.toSong() } ?: emptyList()
-            } else emptyList()
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "getRecommendSongs() failed: ${e.message}", e)
-        }.getOrDefault(emptyList())
-
-    // ==================== QQ登录 ====================
-
-    /**
-     * QQ授权登录
-     */
-    suspend fun loginWithQQ(openid: String, accessToken: String): KgLoginData? =
-        runCatching {
-            val resp = api.loginWithQQ(openid, accessToken)
-            if (resp.status == 1 && resp.data != null) {
-                CookieStore.setKgToken(resp.data.token)
-                CookieStore.setKgUserid(resp.data.userid.toString())
-                if (resp.data.dfid.isNotEmpty()) {
-                    CookieStore.setKgDfid(resp.data.dfid)
-                }
-                resp.data
-            } else null
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "loginWithQQ() failed: ${e.message}", e)
-        }.getOrNull()
-
-    /**
-     * 创建QQ扫码登录二维码
-     */
-    suspend fun createQQLoginQR(): KgQQQRCreateData? =
-        runCatching {
-            val resp = api.createQQLoginQR()
-            // 新版 API 直接返回扁平 JSON，需要转换为旧格式供 UI 使用
-            if (resp.qrcode.isNotEmpty()) {
-                // 将 base64 二维码转换为 data URL
-                val qrUrl = "data:image/png;base64,${resp.qrcode}"
-                // 使用 qrsig 作为 qr_id，并保存完整响应用于后续 check
-                KgQQQRCreateData(qrUrl = qrUrl, qrId = resp.qrsig, fullResp = resp)
-            } else null
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "createQQLoginQR() failed: ${e.message}", e)
-        }.getOrNull()
-
-    /**
-     * 检查QQ扫码登录状态
-     */
-    suspend fun checkQQLoginQR(qrData: KgQQQRCreateData): KgQQQRCheckResp? =
-        runCatching {
-            val fullResp = qrData.fullResp ?: return@runCatching null
-            val platform = CookieStore.kgPlatformValue()
-            val resp = api.checkQQLoginQR(
-                qrsig = fullResp.qrsig,
-                ptqrtoken = fullResp.ptqrtoken.toString(),
-                ptLoginSig = fullResp.ptLoginSig,
-                ptOpenloginData = fullResp.ptOpenloginData,
-                xloginUrl = fullResp.xloginUrl,
-                cookie = fullResp.cookie,
-                platform = platform
-            )
-            if (resp.status == 1 && resp.data != null) {
-                CookieStore.setKgToken(resp.data.token)
-                CookieStore.setKgUserid(resp.data.userid.toString())
-                if (resp.data.dfid.isNotEmpty()) {
-                    CookieStore.setKgDfid(resp.data.dfid)
+        internal fun playableUrl(data: JsonObject): String? {
+            for (key in listOf("url", "play_url", "backup_url", "play_backup_url")) {
+                val value = data[key]
+                val candidates = when (value) { is JsonArray -> value; is JsonPrimitive -> listOf(value); else -> emptyList() }
+                for (candidate in candidates) {
+                    val url = (candidate as? JsonPrimitive)?.contentOrNull.orEmpty()
+                    if (url.startsWith("https://") || url.startsWith("http://")) return url
                 }
             }
-            resp
-        }.onFailure { e ->
-            android.util.Log.e("KugouRepository", "checkQQLoginQR() failed: ${e.message}", e)
-        }.getOrNull()
+            return null
+        }
 
-    // ==================== 辅助转换方法 ====================
-
-    /**
-     * 酷狗搜索结果转Song
-     */
-    private fun KgSearchSong.toSong(): Song = Song(
-        id = this.audioId,
-        nm = this.songName,
-        ar = this.singerName,
-        pc = null,  // 酷狗搜索结果不带封面
-        source = "kugou"
-    )
-
-    /**
-     * 酷狗歌曲详情转Song
-     */
-    private fun KgSongDetail.toSong(): Song = Song(
-        id = this.audioId,
-        nm = this.songName,
-        ar = this.authorName,
-        pc = this.img,
-        source = "kugou"
-    )
-
-    /**
-     * 酷狗历史记录转Song
-     */
-    private fun KgHistoryItem.toSong(): Song = Song(
-        id = this.audioId,
-        nm = this.songName,
-        ar = this.authorName,
-        pc = null,
-        source = "kugou"
-    )
-
-    /**
-     * 酷狗个人 FM 歌曲转 Song
-     */
-    private fun KgFmSong.toSong(): Song = Song(
-        id = this.songid,
-        nm = this.songname,
-        ar = this.singerinfo.joinToString(", ") { it.name },
-        pc = null,
-        source = "kugou"
-    )
+        internal fun song(item: JsonObject): Song {
+            val hash = item.text("FileHash", "Hash", "hash")
+            val filename = item.text("FileName", "filename", "audio_name")
+            val id = item.number("MixSongID", "mixsongid", "album_audio_id", "Audioid", "audio_id", "songid")
+                .takeIf { it > 0 } ?: hash.take(15).toLongOrNull(16) ?: 0
+            return Song(id = id,
+                nm = item.text("SongName", "OriSongName", "song_name", "songname").ifEmpty { filename.substringAfter(" - ", filename) },
+                ar = item.text("SingerName", "singername", "author_name").ifEmpty { item.items("singerinfo").joinToString(", ") { it.text("name") } }.ifEmpty { filename.substringBefore(" - ", "") },
+                pc = item.text("Image", "img", "album_img").replace("{size}", "400").takeIf(String::isNotEmpty),
+                source = "kugou", hash = hash,
+                albumId = item.text("AlbumID", "album_id", "albumid"),
+                albumAudioId = item.number("MixSongID", "mixsongid", "album_audio_id"))
+        }
+    }
 }

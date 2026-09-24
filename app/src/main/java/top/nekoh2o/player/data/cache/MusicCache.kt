@@ -63,6 +63,8 @@ object MusicCache {
     }
 
     fun cacheKeyForSong(songId: Long): String = songId.toString()
+    fun cacheKeyForSong(song: top.nekoh2o.player.data.model.Song): String =
+        if (song.source == "netease") cacheKeyForSong(song.id) else song.source + ":" + song.hash.ifEmpty { song.id.toString() }
 
     @Synchronized
     fun remove(key: String) {

@@ -47,6 +47,9 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
 
+      - name: Verify Kotlin regression tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --max-workers=2
+
       - name: Build signed release APK
         env:
           KEYSTORE_FILE: ${{ runner.temp }}/release.jks
@@ -64,7 +67,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/NekoPlayer-*.apk
-          body_path: ${{ github.ref_name == 'v1.0.8-pre' && 'docs/RELEASE_v1.0.8-pre.md' || '' }}
+          body_path: ${{ github.ref_name == 'v1.0.8' && 'docs/RELEASE_v1.0.8.md' || '' }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           prerelease: ${{ contains(github.ref_name, 'pre') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}

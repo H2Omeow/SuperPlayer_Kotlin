@@ -105,7 +105,7 @@ class MusicRepository {
      */
     suspend fun lyric(song: Song): List<LyricLine> {
         return when (song.source) {
-            "kugou" -> lyricKugou(song.id)
+            "kugou" -> lyricKugou(song)
             "netease" -> lyric(song.id)
             else -> lyric(song.id)
         }
@@ -124,9 +124,9 @@ class MusicRepository {
         return emptyList()
     }
 
-    private suspend fun lyricKugou(id: Long): List<LyricLine> {
+    private suspend fun lyricKugou(song: Song): List<LyricLine> {
         val kgRepo = KugouRepository()
-        val lrcText = kgRepo.getLyric(id.toString()) ?: return emptyList()
+        val lrcText = kgRepo.getLyric(song.hash) ?: return emptyList()
         return LyricParser.parse(lrcText, null)
     }
 
@@ -138,7 +138,7 @@ class MusicRepository {
      */
     suspend fun resolvePlayUrl(song: Song, level: String = CookieStore.level): String? {
         return when (song.source) {
-            "kugou" -> resolveKugouPlayUrl(song.id, level)
+            "kugou" -> resolveKugouPlayUrl(song, level)
             "netease" -> resolveNeteasePlayUrl(song.id, level)
             else -> resolveNeteasePlayUrl(song.id, level)
         }
@@ -165,17 +165,15 @@ class MusicRepository {
         }.getOrNull()
     }
 
-    private suspend fun resolveKugouPlayUrl(id: Long, level: String): String? {
+    private suspend fun resolveKugouPlayUrl(song: Song, level: String): String? {
         val kgRepo = KugouRepository()
-        // 将歌曲ID作为hash使用（实际应该从KgSongDetail获取hash）
-        // 这里简化处理，实际使用时需要先查询歌曲详情获取hash
         val qualityMap = mapOf(
             "standard" to "128",
             "higher" to "320",
             "exhigh" to "320",
             "lossless" to "flac"
         )
-        return kgRepo.getSongUrl(id.toString(), qualityMap[level] ?: "320")
+        return kgRepo.getSongUrl(song.hash, qualityMap[level] ?: "320")
     }
 
     // ---------- 分类搜索：歌手 ----------

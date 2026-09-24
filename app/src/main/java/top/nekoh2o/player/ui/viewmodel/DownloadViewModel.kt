@@ -45,7 +45,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
-        if (DownloadIndex.isDownloaded(song.id)) {
+        if (DownloadIndex.isDownloaded(song)) {
             onError("已下载过该歌曲")
             return
         }
@@ -78,8 +78,8 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * 删除已下载歌曲（文件 + 索引）
      */
-    fun removeDownloaded(songId: Long) {
-        val downloaded = DownloadIndex.get(songId) ?: return
+    fun removeDownloaded(song: Song) {
+        val downloaded = DownloadIndex.get(song) ?: return
 
         // 删除音频文件
         runCatching {
@@ -107,6 +107,6 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
-        DownloadIndex.remove(songId)
+        DownloadIndex.remove(song)
     }
 }

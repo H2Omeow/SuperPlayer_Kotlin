@@ -10,7 +10,10 @@ data class Song(
     val nm: String,
     val ar: String,
     val pc: String? = null,
-    val source: String = "netease"  // netease | kugou
+    val source: String = "netease",  // netease | kugou
+    val hash: String = "",
+    val albumId: String = "",
+    val albumAudioId: Long = 0
 )
 
 // 自定义歌单（对应 web customPlaylists）

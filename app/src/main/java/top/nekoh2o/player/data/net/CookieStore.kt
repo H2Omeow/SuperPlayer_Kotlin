@@ -32,14 +32,14 @@ object CookieStore {
     private val KEY_KG_USERID = stringPreferencesKey("kg_userid")
     private val KEY_KG_DFID = stringPreferencesKey("kg_dfid")
 
+    lateinit var kgSessions: KugouSessionStore
+        private set
+
     private lateinit var appContext: Context
     @Volatile private var userCookie: String = ""
     @Volatile private var guestCookie: String = ""
     @Volatile private var appToken: String = ""
-    @Volatile private var kgToken: String = ""
     @Volatile private var kgPlatform: String = "0"  // 0=原版，1=概念版
-    @Volatile private var kgUserid: String = ""
-    @Volatile private var kgDfid: String = ""
     @Volatile var level: String = "exhigh"
         private set
     private val ready = CompletableDeferred<Unit>()
@@ -54,15 +54,12 @@ object CookieStore {
             userCookie = prefs[KEY_USER] ?: ""
             guestCookie = prefs[KEY_GUEST] ?: ""
             appToken = prefs[KEY_APP_TOKEN] ?: ""
-            kgToken = prefs[KEY_KG_TOKEN] ?: ""
             kgPlatform = prefs[KEY_KG_PLATFORM] ?: "0"
-            kgUserid = prefs[KEY_KG_USERID] ?: ""
-            kgDfid = prefs[KEY_KG_DFID] ?: ""
             level = prefs[KEY_LEVEL] ?: "exhigh"
 
-            android.util.Log.d("CookieStore", "init() - appToken loaded: ${appToken.take(20)}... (len=${appToken.length})")
-            android.util.Log.d("CookieStore", "init() - kgToken loaded: ${kgToken.take(20)}... (len=${kgToken.length})")
 
+            kgSessions = KugouSessionStore(appContext.getSharedPreferences("kugou_sessions", Context.MODE_PRIVATE))
+            kgSessions.migrate(kgPlatformValue(), prefs[KEY_KG_TOKEN].orEmpty(), prefs[KEY_KG_USERID].orEmpty(), prefs[KEY_KG_DFID].orEmpty())
             ready.complete(Unit)
         }
     }
@@ -98,12 +95,10 @@ object CookieStore {
 
     // ==================== SSO app_token ====================
     fun appTokenValue(): String {
-        android.util.Log.d("CookieStore", "appTokenValue() called - returning: ${appToken.take(20)}... (len=${appToken.length})")
         return appToken
     }
 
     suspend fun setAppToken(token: String) {
-        android.util.Log.d("CookieStore", "setAppToken() - saving: ${token.take(20)}... (len=${token.length})")
         appToken = token
         appContext.dataStore.edit { it[KEY_APP_TOKEN] = token }
     }
@@ -113,52 +108,24 @@ object CookieStore {
         appContext.dataStore.edit { it.remove(KEY_APP_TOKEN) }
     }
 
-    // ==================== 酷狗 token ====================
-    fun kgTokenValue(): String = kgToken
-
-    suspend fun setKgToken(token: String) {
-        android.util.Log.d("CookieStore", "setKgToken() - saving: ${token.take(20)}... (len=${token.length})")
-        kgToken = token
-        appContext.dataStore.edit { it[KEY_KG_TOKEN] = token }
-    }
-
-    suspend fun clearKgToken() {
-        kgToken = ""
-        appContext.dataStore.edit { it.remove(KEY_KG_TOKEN) }
-    }
-
-    fun hasKgToken(): Boolean = kgToken.isNotEmpty()
-
-    // 酷狗平台类型：0=原版，1=概念版
-    fun kgPlatformValue(): Int = kgPlatform.toIntOrNull() ?: 0
+    // KuGou credentials are scoped to a backend platform. Device cookies survive logout.
+    fun kgTokenValue(platform: Int = kgPlatformValue()): String = kgSessions.value(platform, "token")
+    suspend fun setKgToken(token: String) = kgSessions.merge(kgPlatformValue(), mapOf("token" to token))
+    suspend fun clearKgToken() = kgSessions.clearLogin(kgPlatformValue())
+    fun hasKgToken(): Boolean = kgTokenValue().isNotEmpty()
+    fun kgPlatformValue(): Int = kgPlatform.toIntOrNull()?.takeIf { it in 0..1 } ?: 0
 
     suspend fun setKgPlatform(platform: Int) {
+        require(platform in 0..1)
         kgPlatform = platform.toString()
         appContext.dataStore.edit { it[KEY_KG_PLATFORM] = kgPlatform }
     }
 
-    // 酷狗 userid
-    fun kgUseridValue(): String = kgUserid
-
-    suspend fun setKgUserid(userid: String) {
-        kgUserid = userid
-        appContext.dataStore.edit { it[KEY_KG_USERID] = userid }
-    }
-
-    // 酷狗 dfid
-    fun kgDfidValue(): String = kgDfid
-
+    fun kgUseridValue(platform: Int = kgPlatformValue()): String = kgSessions.value(platform, "userid")
+    suspend fun setKgUserid(userid: String) = kgSessions.merge(kgPlatformValue(), mapOf("userid" to userid))
+    fun kgDfidValue(platform: Int = kgPlatformValue()): String = kgSessions.value(platform, "dfid")
     suspend fun setKgDfid(dfid: String) {
-        kgDfid = dfid
-        appContext.dataStore.edit { it[KEY_KG_DFID] = dfid }
+        if (dfid.isNotBlank()) kgSessions.merge(kgPlatformValue(), mapOf("dfid" to dfid))
     }
-
-    // 构建酷狗 cookie 字符串: token=xxx;userid=xxx;dfid=xxx
-    fun kgCookieValue(): String {
-        val parts = mutableListOf<String>()
-        if (kgToken.isNotEmpty()) parts.add("token=$kgToken")
-        if (kgUserid.isNotEmpty()) parts.add("userid=$kgUserid")
-        if (kgDfid.isNotEmpty()) parts.add("dfid=$kgDfid")
-        return parts.joinToString(";")
-    }
+    fun kgCookieValue(platform: Int = kgPlatformValue()): String = kgSessions.cookie(platform)
 }

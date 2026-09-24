@@ -61,16 +61,16 @@ class PlaybackService : MediaSessionService() {
 
             if (!raw.startsWith("neko:")) return@Factory dataSpec
 
-            val id = raw.removePrefix("neko:").toLongOrNull()
-                ?: return@Factory dataSpec
-            val key = MusicCache.cacheKeyForSong(id)
+            val song = SongPlaybackUri.decode(dataSpec.uri) ?: return@Factory dataSpec
+            val id = song.id
+            val key = MusicCache.cacheKeyForSong(song)
 
             // 已下载文件优先直读。兼容旧版本保存的裸绝对路径。
-            DownloadIndex.get(id)?.let { downloaded ->
+            DownloadIndex.get(song)?.let { downloaded ->
                 normalizeReadableUri(downloaded.audioUri)?.let { localUri ->
                     return@Factory dataSpec.buildUpon()
                         .setUri(localUri)
-                        .setKey("download:$id")
+                        .setKey("download:" + key)
                         .build()
                 }
             }
@@ -80,7 +80,7 @@ class PlaybackService : MediaSessionService() {
                 return@Factory dataSpec.buildUpon().setKey(key).build()
             }
 
-            val realUrl = runCatching { runBlocking { repo.resolvePlayUrl(id) } }.getOrNull()
+            val realUrl = runCatching { runBlocking { repo.resolvePlayUrl(song) } }.getOrNull()
             if (realUrl != null) {
                 val builder = dataSpec.buildUpon()
                     .setUri(Uri.parse(realUrl))

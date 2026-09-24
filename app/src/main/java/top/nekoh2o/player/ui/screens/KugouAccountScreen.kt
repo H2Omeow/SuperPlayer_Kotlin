@@ -224,9 +224,9 @@ fun KugouAccountScreen(vm: PlayerViewModel, onBack: () -> Unit, onLogin: () -> U
                 )
                 Text(
                     "• 已登录的酷狗账户可以搜索和播放酷狗音乐\n" +
-                    "• 原版和概念版使用不同的token，切换版本需重新登录\n" +
+                    "• 原版与概念版的登录状态分别保存\n" +
                     "• 概念版支持领取VIP（测试接口，可能随时失效）\n" +
-                    "• 登录凭证会自动云端同步",
+                    "• 首次在新设备使用时请扫码或验证码登录",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -240,64 +240,11 @@ private fun VipReceiveDialog(
     onDismiss: () -> Unit,
     onReceive: (vipType: Int, days: Int) -> Unit
 ) {
-    var vipType by remember { mutableIntStateOf(1) }
-    var days by remember { mutableIntStateOf(7) }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("领取VIP") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("VIP类型")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = vipType == 1,
-                        onClick = { vipType = 1 },
-                        label = { Text("VIP") }
-                    )
-                    FilterChip(
-                        selected = vipType == 2,
-                        onClick = { vipType = 2 },
-                        label = { Text("豪华VIP") }
-                    )
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                Text("领取天数")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(7, 30, 365).forEach { d ->
-                        FilterChip(
-                            selected = days == d,
-                            onClick = { days = d },
-                            label = { Text("${d}天") }
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "注意：这是测试接口，可能随时失效",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onReceive(vipType, days) },
-                colors = NekoDefaults.textButtonColors()
-            ) {
-                Text("领取")
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                colors = NekoDefaults.textButtonColors()
-            ) {
-                Text("取消")
-            }
-        }
+        title = { Text("领取概念版每日权益") },
+        text = { Text("领取资格、有效期与结果以酷狗返回为准。请先完成官方要求的听歌任务。") },
+        confirmButton = { TextButton(onClick = { onReceive(1, 1) }) { Text("领取") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
 }

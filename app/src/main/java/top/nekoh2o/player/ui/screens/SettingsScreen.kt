@@ -655,13 +655,8 @@ fun CacheManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
     val state by vm.ui.collectAsState()
     var ncCookieText by remember { mutableStateOf(state.ncCookie) }
-    var kgTokenText by remember { mutableStateOf("") }
-    var kgPlatform by remember { mutableIntStateOf(state.kgAccount.platform) }
 
     LaunchedEffect(state.ncCookie) { ncCookieText = state.ncCookie }
-    LaunchedEffect(Unit) {
-        kgTokenText = top.nekoh2o.player.data.net.CookieStore.kgTokenValue()
-    }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -740,82 +735,13 @@ fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
             HorizontalDivider()
 
-            // 酷狗Token
-            Text(
-                "酷狗音乐 Token",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            Text(
-                "酷狗音乐登录凭证。可在酷狗登录界面登录，或手动填写 Token。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = kgPlatform == 0,
-                    onClick = { kgPlatform = 0 },
-                    label = { Text("原版") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChip(
-                    selected = kgPlatform == 1,
-                    onClick = { kgPlatform = 1 },
-                    label = { Text("概念版") },
-                    modifier = Modifier.weight(1f)
-                )
+            Text("酷狗音乐账号", style = MaterialTheme.typography.titleMedium)
+            Text("请在酷狗账号页面使用验证码或扫码登录。登录凭据和设备信息由应用自动保存。",
+                style = MaterialTheme.typography.bodySmall)
+            if (state.kgAccount.isValid) {
+                OutlinedButton(onClick = { vm.clearKgAccount() }) { Text("退出当前酷狗账号") }
             }
 
-            OutlinedTextField(
-                value = kgTokenText,
-                onValueChange = { kgTokenText = it },
-                label = { Text("酷狗 Token") },
-                modifier = Modifier.fillMaxWidth().height(160.dp),
-                maxLines = 6,
-                colors = NekoDefaults.textFieldColors()
-            )
-
-            if (kgTokenText.length > 200) {
-                Text(
-                    "Token 内容已截断显示，实际长度：${kgTokenText.length} 字符",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        vm.saveKgToken(kgTokenText, kgPlatform)
-                    },
-                    modifier = Modifier.weight(1f)
-                ) { Text("保存") }
-                OutlinedButton(
-                    onClick = {
-                        kgTokenText = ""
-                        vm.saveKgToken("", kgPlatform)
-                    },
-                    colors = NekoDefaults.outlinedButtonColors()
-                ) { Text("清除") }
-            }
-
-            if (kgTokenText.isNotEmpty()) {
-                Text(
-                    "当前 Token 已设置（${if (kgPlatform == 0) "原版" else "概念版"}）",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                Text(
-                    "当前未设置 Token，无法使用酷狗音乐",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }

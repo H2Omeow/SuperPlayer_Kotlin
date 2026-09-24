@@ -120,7 +120,8 @@ data class KgPlaylistItem(
     @SerialName("specialid") val specialId: Long = 0,
     @SerialName("specialname") val specialName: String = "",
     val imgurl: String? = null,
-    @SerialName("songcount") val songCount: Int = 0
+    @SerialName("songcount") val songCount: Int = 0,
+    val collectionId: String = ""
 )
 
 /**
@@ -368,50 +369,7 @@ data class KgHistoryItem(
     @SerialName("author_name") val authorName: String = ""
 )
 
-// ==================== QQ登录相关 ====================
-
-/**
- * QQ 授权登录响应
- */
-@Serializable
-data class KgQQLoginResp(
-    val status: Int = 0,
-    val error_msg: String = "",
-    val data: KgLoginData? = null
-)
-
-/**
- * QQ 扫码登录 - 创建二维码响应
- * 注意：新版 API 直接返回扁平 JSON，不在 data 字段内
- */
-@Serializable
-data class KgQQQRCreateResp(
-    val qrcode: String = "",
-    val qrsig: String = "",
-    val ptqrtoken: Long = 0,
-    @SerialName("pt_login_sig") val ptLoginSig: String = "",
-    @SerialName("pt_openlogin_data") val ptOpenloginData: String = "",
-    @SerialName("xlogin_url") val xloginUrl: String = "",
-    val cookie: String = ""
-)
-
-/**
- * QQ 扫码登录 - 用于 UI 展示的数据
- */
-data class KgQQQRCreateData(
-    val qrUrl: String = "",       // 二维码图片 data URL
-    val qrId: String = "",        // 用于轮询的 ID（实际是 qrsig）
-    // 保存完整的响应数据，用于后续 check 调用
-    val fullResp: KgQQQRCreateResp? = null
-)
-
-/**
- * QQ 扫码登录 - 检查状态响应
- */
-@Serializable
-data class KgQQQRCheckResp(
-    val status: Int = 0,  // 0=等待扫码, 1=登录成功, 2=二维码过期
-    val error_msg: String = "",
-    val data: KgLoginData? = null
-)
-
+data class KgQrSession(val key: String, val image: String, val platform: Int)
+data class KgQrCheckResult(val status: Int, val account: KgLoginData? = null)
+data class KgLoginAccount(val userid: Long, val nickname: String)
+class KugouAccountSelection(val accounts: List<KgLoginAccount>) : Exception("请选择要登录的酷狗账号")
