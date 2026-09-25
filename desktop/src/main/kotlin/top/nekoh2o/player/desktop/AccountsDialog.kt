@@ -58,7 +58,7 @@ internal class AccountsDialog(owner: JFrame) : AsyncDialog(owner, "账号与 Coo
         val site = JPanel(GridLayout(0,1,6,6)).apply {
             add(JLabel("本站账号：使用浏览器登录，返回后验证账号身份。"))
             add(row(button("浏览器登录本站") { siteLogin() }, button("导入登录令牌 / 回调链接") { importSiteToken() }))
-            add(row(button("检查本站账号") { task("检查账号…") { val user = withContext(Dispatchers.IO) { ApiFactory.user.me() }; require(user.code == 200 && user.user != null) { "本站会话无效，请重新登录" }; status.text = "本站：" + (user.user!!.nickname ?: user.user!!.username) } },
+            add(row(button("检查本站账号") { task("检查账号…") { val user = withContext(Dispatchers.IO) { ApiFactory.user.me() }; require(user.code == 0 && user.user != null) { "本站会话无效，请重新登录" }; status.text = "本站：" + (user.user!!.nickname ?: user.user!!.username) } },
                 button("退出本站") { task("退出登录…") { withContext(Dispatchers.IO) { runCatching { ApiFactory.user.logout() }; CookieStore.clearAppToken() }; refresh() } }))
         }
         tabs.addTab("网易云", netease); tabs.addTab("酷狗", kugou); tabs.addTab("本站", site)
@@ -151,7 +151,7 @@ internal class AccountsDialog(owner: JFrame) : AsyncDialog(owner, "账号与 Coo
             try {
                 CookieStore.setAppToken(token)
                 val result = ApiFactory.user.me()
-                require(result.code == 200 && result.user != null) { "登录令牌无效或已过期" }
+                require(result.code == 0 && result.user != null) { "登录令牌无效或已过期" }
             } catch (e: Throwable) { CookieStore.setAppToken(previous); throw e }
         }
         refresh(); status.text = "本站登录成功"

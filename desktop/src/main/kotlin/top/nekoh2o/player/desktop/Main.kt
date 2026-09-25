@@ -264,12 +264,12 @@ internal class PlayerWindow : JFrame("NekoPlayer · Desktop 1.0.9-pre") {
                     showSongs(chosen.name, tracks)
                 }
             }
-            options[3] -> work("正在同步…") { val remote = withContext(Dispatchers.IO) { ApiFactory.user.pullData() }; require(remote.code == 200 && remote.data != null) { "请先登录本站" }; library.merge(remote.data!!); showSongs("我的收藏", library.data.favorites) }
+            options[3] -> work("正在同步…") { val remote = withContext(Dispatchers.IO) { ApiFactory.user.pullData() }; require(remote.code == 0 && remote.data != null) { "请先登录本站" }; library.merge(remote.data!!); showSongs("我的收藏", library.data.favorites) }
             options[4] -> work("正在同步…") { withContext(Dispatchers.IO) {
-                val remote = ApiFactory.user.pullData(); require(remote.code == 200 && remote.data != null) { "请先登录本站" }
+                val remote = ApiFactory.user.pullData(); require(remote.code == 0 && remote.data != null) { "请先登录本站" }
                 library.merge(remote.data!!)
                 val result = ApiFactory.user.pushData(remote.data!!.copy(favorites = library.data.favorites, history = library.data.history, playlists = library.data.playlists))
-                require(result.code == 200) { "云端未确认同步成功" }
+                require(result.code == 0) { "云端未确认同步成功" }
             } }
         }
     }
