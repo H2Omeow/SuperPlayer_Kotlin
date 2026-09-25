@@ -104,7 +104,7 @@ internal class PlayerWindow : JFrame("NekoPlayer · Desktop 1.0.9-pre") {
         nav("播放队列") { showSongs("播放队列", queue) }
         nav("打开本地音乐") { openLocal() }
         sidebar.add(Box.createVerticalStrut(18))
-        nav("账号与 Cookie") { AccountsDialog(this).isVisible = true }
+        nav("账号与 Cookie") { AccountsDialog(this) { library.reload(); status.text = "本站云端数据已同步" }.isVisible = true }
         nav("音效与母带") { EffectsDialog(this, player).isVisible = true }
         nav("设置与音质") { settings() }
         nav("下载目录") { val dir = downloadDirectory(); Files.createDirectories(dir); Desktop.getDesktop().open(dir.toFile()) }

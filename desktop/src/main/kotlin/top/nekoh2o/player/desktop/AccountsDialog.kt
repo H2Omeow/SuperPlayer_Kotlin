@@ -26,7 +26,7 @@ internal open class AsyncDialog(owner: JFrame, title: String) : JDialog(owner, t
     }
 }
 
-internal class AccountsDialog(owner: JFrame) : AsyncDialog(owner, "账号与 Cookie") {
+internal class AccountsDialog(owner: JFrame, private val onSiteLogin: () -> Unit = {}) : AsyncDialog(owner, "账号与 Cookie") {
     private val platform = JComboBox(arrayOf("酷狗原版", "酷狗概念版"))
     private val phone = JTextField(16)
     private val code = JTextField(8)
@@ -154,7 +154,30 @@ internal class AccountsDialog(owner: JFrame) : AsyncDialog(owner, "账号与 Coo
                 require(result.code == 0 && result.user != null) { "登录令牌无效或已过期" }
             } catch (e: Throwable) { CookieStore.setAppToken(previous); throw e }
         }
-        refresh(); status.text = "本站登录成功"
+        refresh()
+        try {
+            syncSiteData()
+            onSiteLogin()
+            status.text = "本站登录成功，云端数据已同步"
+        } catch (e: CancellationException) { throw e }
+        catch (e: Throwable) {
+            status.text = "本站登录成功，但云端同步失败"
+            failure(this, e)
+        }
+    }
+    private suspend fun syncSiteData() = withContext(Dispatchers.IO) {
+        val remote = ApiFactory.user.pullData()
+        require(remote.code == 0) { "云端数据读取失败，请稍后在歌单菜单重试" }
+        val local = Library()
+        remote.data?.let(local::merge)
+        val base = remote.data ?: top.nekoh2o.player.data.model.UserData()
+        val merged = base.copy(
+            history = local.data.history,
+            favorites = local.data.favorites,
+            playlists = local.data.playlists
+        )
+        val pushed = ApiFactory.user.pushData(merged)
+        require(pushed.code == 0) { "云端未确认数据同步成功" }
     }
     private fun importSiteToken() {
         val raw = JOptionPane.showInputDialog(this, "粘贴本站登录令牌或 nekoplayer://auth 回调链接")?.trim() ?: return

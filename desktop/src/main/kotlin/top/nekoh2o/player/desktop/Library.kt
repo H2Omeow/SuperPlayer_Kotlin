@@ -8,6 +8,7 @@ import top.nekoh2o.player.data.model.*
 class Library(private val preferences: FilePreferences = DesktopPaths.preferences) {
     private val json = Json { ignoreUnknownKeys = true }
     var data = json.decodeFromString<LibraryData>(preferences.getString("library", "{}")!!); private set
+    fun reload() { data = json.decodeFromString(preferences.getString("library", "{}")!!) }
     fun favorite(song: Song) { data = data.copy(favorites = if (data.favorites.any { key(it) == key(song) }) data.favorites.filter { key(it) != key(song) } else data.favorites + song); save() }
     fun played(song: Song) { data = data.copy(history = (listOf(song) + data.history.filter { key(it) != key(song) }).take(200)); save() }
     fun merge(remote: UserData) { data = data.copy(favorites = (data.favorites + remote.favorites).distinctBy(::key), history = (data.history + remote.history).distinctBy(::key).take(200), playlists = (data.playlists + remote.playlists).distinctBy { it.id }); save() }
