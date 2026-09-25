@@ -9,6 +9,7 @@
 - 复用原生 API 和 C++ DSP；播放输出为 48 kHz / 16-bit 双声道，下载保留原始音质。
 - 初次播放先完整缓冲；酷狗评论点赞/删除仍保持禁用。真实账号授权与各系统音频设备仍需实际使用验收。
 - 提供 FFmpeg 对应源码与桌面包 SHA-256 清单，详情见 desktop/README.md。
+- Windows/Linux x64、x86、ARM64 与 Windows ARM64 在 CI 执行完整 PCM/DSP 启动自检；Linux ARMv7 在 hosted runner 上完成 ELF 架构校验，真实 ARMv7 播放仍需设备验收。
 
 ## 登录与 Cookie 修复
 - 酷狗短信发送、令牌刷新改用证书匹配的 HTTPS 登录域名，修复旧域名证书不匹配导致的连接失败。

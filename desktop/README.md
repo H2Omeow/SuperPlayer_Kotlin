@@ -44,7 +44,7 @@ cmake --build desktop/build/native
 JAVA_OPTS="-Djava.library.path=$PWD/desktop/build/native" desktop/build/install/NekoPlayer-desktop/bin/NekoPlayer-desktop
 ```
 
-Gradle 同步可移植业务源码，平台适配独立维护。`desktop/packaging/build.py` 在 Linux x64 上交叉构建；依赖版本和 SHA-256 固定于 `dependencies.json`。Windows 使用 LLVM-MinGW；Linux ARM 使用 GNU 交叉编译器，x86 使用 multilib。CI 检查 JVM/解码器/JNI 的 ELF/PE 架构，并在对应 runner 或 QEMU 中运行 PCM/DSP 自检。
+Gradle 同步可移植业务源码，平台适配独立维护。`desktop/packaging/build.py` 在 Linux x64 上交叉构建；依赖版本和 SHA-256 固定于 `dependencies.json`。Windows 使用 LLVM-MinGW；Linux ARM 使用 GNU 交叉编译器，x86 使用 multilib。CI 检查 JVM/解码器/JNI 的 ELF/PE 架构；x64、x86、ARM64 和 Windows ARM64 运行完整 PCM/DSP 自检，ARMv7 在 hosted runner 上做 ELF 校验，仍需真实 ARMv7 设备验收。
 
 ## 开源组件
 
