@@ -4,7 +4,7 @@ plugins {
     application
 }
 repositories { mavenCentral() }
-version = "1.0.9"
+version = "1.1.0-pre"
 application { mainClass.set("top.nekoh2o.player.desktop.MainKt") }
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8) } }
 tasks.withType<JavaCompile>().configureEach { sourceCompatibility = "1.8"; targetCompatibility = "1.8" }

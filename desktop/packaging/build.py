@@ -112,7 +112,7 @@ def build(target):
     ffmpeg = ffbuild / ("ffmpeg.exe" if windows else "ffmpeg")
     if not ffmpeg.is_file():
         raise RuntimeError("FFmpeg binary missing")
-    stage = DESKTOP / "build" / "stage" / ("NekoPlayer-1.0.9-" + target)
+    stage = DESKTOP / "build" / "stage" / ("NekoPlayer-1.1.0-pre-" + target)
     shutil.rmtree(stage, ignore_errors=True)
     (stage / "native").mkdir(parents=True)
     shutil.copytree(runtime, stage / "runtime", symlinks=True)
@@ -131,7 +131,7 @@ def build(target):
     shutil.copy2(DESKTOP / "README.md", stage / "DESKTOP.md")
     shutil.copytree(ROOT / "app/src/main/assets/licenses", licenses / "providers", dirs_exist_ok=True)
     shutil.copy2(DESKTOP / "packaging/dependencies.json", stage / "dependencies.json")
-    manifest = {"target": target, "version": "1.0.9", "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+    manifest = {"target": target, "version": "1.1.0-pre", "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                 "ffmpeg_source": PINS["ffmpeg"], "ffmpeg_configure": configure, "runtime": PINS["runtimes"][target]}
     (stage / "build-info.json").write_text(json.dumps(manifest, indent=2) + "\n")
     if windows:
