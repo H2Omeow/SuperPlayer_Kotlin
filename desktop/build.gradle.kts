@@ -22,10 +22,10 @@ dependencies {
 }
 val sharedSources by tasks.registering(Sync::class) {
     from("../app/src/main/java") {
-        include("**/data/model/**", "**/data/net/*Api.kt", "**/data/net/ProviderPreferences.kt")
+        include("**/data/model/**", "**/data/net/*Api.kt", "**/data/net/AnimemusicApi.kt", "**/data/net/ProviderPreferences.kt")
         include("**/data/net/KugouSessionStore.kt", "**/data/net/KugouInterceptor.kt", "**/data/net/KugouResponse.kt", "**/data/net/KugouLoginError.kt")
         include("**/data/net/nativeapi/NativeSupport.kt", "**/data/net/nativeapi/*Interceptor.kt")
-        include("**/data/repo/KugouRepository.kt", "**/data/repo/MusicRepository.kt", "**/data/repo/SongQualityRepository.kt", "**/data/repo/CommentsRepository.kt")
+        include("**/data/repo/KugouRepository.kt", "**/data/repo/MusicRepository.kt", "**/data/repo/SongQualityRepository.kt", "**/data/repo/AnimemusicRepository.kt", "**/data/repo/CommentsRepository.kt")
         include("**/lyric/**", "**/audio/NativeAudioEffectsController.kt")
     }
     into(layout.buildDirectory.dir("generated/shared"))
@@ -39,3 +39,14 @@ val sharedTests by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/shared-tests"))
 }
 kotlin.sourceSets.test { kotlin.srcDir(sharedTests) }
+tasks.test {
+    dependsOn(tasks.named("buildNative"))
+    systemProperty("java.library.path", layout.buildDirectory.dir("native").get().asFile.absolutePath)
+}
+tasks.register<Exec>("buildNative") {
+    val output = layout.buildDirectory.dir("native").get().asFile
+    outputs.dir(output)
+    doFirst { output.mkdirs() }
+    commandLine("cmake", "-S", "native", "-B", output.absolutePath, "-DCMAKE_BUILD_TYPE=Release")
+    doLast { exec { commandLine("cmake", "--build", output.absolutePath, "-j2") } }
+}

@@ -12,6 +12,7 @@ import top.nekoh2o.player.data.net.nativeapi.*
 object ApiFactory {
     const val BASE = "https://player.nekoh2o.top/"
     const val PLAYER_HOST = "player.nekoh2o.top"
+    const val ANIMEMUSIC_BASE = "https://animemusic.bzxhkj.com/v1/index.php/"
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }
     private val publicClient = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS).callTimeout(40, TimeUnit.SECONDS).build()
@@ -28,11 +29,14 @@ object ApiFactory {
         .addInterceptor(KugouNativeInterceptor(CookieStore.kgSessions)).build()
     private fun retrofit(client: OkHttpClient) = Retrofit.Builder().baseUrl(BASE).client(client)
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build()
+    private fun animemusicRetrofit() = Retrofit.Builder().baseUrl(ANIMEMUSIC_BASE).client(publicClient)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build()
     val music: MusicApi by lazy { retrofit(ncClient).create(MusicApi::class.java) }
     val nativeMusic: ProviderApi by lazy { retrofit(ncClient).create(ProviderApi::class.java) }
     val netease: NeteaseApi by lazy { retrofit(ncClient).create(NeteaseApi::class.java) }
     val kugou: KugouApi by lazy { retrofit(kgClient).create(KugouApi::class.java) }
     val user: UserApi by lazy { retrofit(siteClient).create(UserApi::class.java) }
+    val animemusic: AnimemusicApi by lazy { animemusicRetrofit().create(AnimemusicApi::class.java) }
     fun client() = siteClient
     fun mediaClient() = publicClient.newBuilder().callTimeout(0, TimeUnit.SECONDS).build()
     suspend fun awaitReady() = Unit

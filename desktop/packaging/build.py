@@ -72,6 +72,8 @@ def build(target):
         triplet = {"x64": "x86_64", "x86": "i686", "arm64": "aarch64"}[arch] + "-w64-mingw32"
         prefix = str(toolchain / "bin" / (triplet + "-"))
         cc, cxx = prefix + "clang", prefix + "clang++"
+        if not Path(cxx).is_file():
+            raise RuntimeError(f"LLVM-MinGW compiler missing: {cxx}")
         cross = ["--enable-cross-compile", "--target-os=mingw32", "--cross-prefix=" + prefix]
         native = build_dir / "nekoplayer_audio_effects.dll"
         launcher_binary = build_dir / "NekoPlayer.exe"

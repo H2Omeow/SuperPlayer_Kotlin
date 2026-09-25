@@ -4,7 +4,7 @@ on:
   push:
     tags: ['v*']
 permissions:
-  contents: read
+  contents: write
 jobs:
   kotlin:
     runs-on: ubuntu-22.04
@@ -16,7 +16,6 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: cmake -S desktop/native -B desktop/build/native -DCMAKE_BUILD_TYPE=Release && cmake --build desktop/build/native -j2
       - run: ./gradlew -p desktop test installDist --no-daemon --max-workers=2
       - uses: actions/upload-artifact@v4
         with:
@@ -50,6 +49,7 @@ jobs:
             linux-x86) sudo apt-get update && sudo apt-get install -y g++-multilib ;;
             linux-arm64) sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu ;;
             linux-armv7) sudo apt-get update && sudo apt-get install -y g++-arm-linux-gnueabihf ;;
+            windows-*) sudo apt-get update && sudo apt-get install -y clang lld ;;
           esac
       - name: Build native components and archive
         env:
