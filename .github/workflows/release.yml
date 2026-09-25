@@ -66,6 +66,18 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew clean assembleRelease --no-daemon
 
+      - name: Verify universal APK architectures
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          expected = {'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'}
+          with ZipFile('app/build/outputs/apk/release/app-release.apk') as apk:
+              actual = {name.split('/')[1] for name in apk.namelist()
+                        if name.startswith('lib/') and name.endswith('/libnekoplayer_audio_effects.so')}
+          assert actual == expected, f'Unexpected APK architectures: {sorted(actual)}'
+          print('Verified Android architectures:', ', '.join(sorted(actual)))
+          PY
+
       - name: Rename APK
         run: |
           mkdir -p dist

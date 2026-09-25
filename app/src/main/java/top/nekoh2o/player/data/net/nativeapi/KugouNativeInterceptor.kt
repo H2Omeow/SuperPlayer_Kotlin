@@ -56,7 +56,8 @@ class KugouNativeInterceptor(private val sessions: KugouSessionStore) : Intercep
                 rawBody=Crypto.b64(Crypto.aes(value(device).toString().toByteArray(),hash.take(16),hash.takeLast(16)))
                 query("part" to 1,"platid" to 1,"p" to Crypto.rsa(obj("aes" to secret,"uid" to uid.toLong(),"token" to token).toString().toByteArray(),rsa,pkcs=true))
             }
-            "captcha/sent" -> { host="https://login.user.kugou.com";path="/v7/send_mobile_code";post(obj("businessid" to 5,"mobile" to arg("mobile"),"plat" to 3)) }
+            // The legacy dotted login host has a mismatched TLS certificate.
+            "captcha/sent" -> { host=LOGIN_HOST;path="/v7/send_mobile_code";post(obj("businessid" to 5,"mobile" to arg("mobile"),"plat" to 3)) }
             "login/cellphone", "login/token" -> {
                 val secret=Crypto.randomText(16);decryptKey=secret;val hash=Crypto.md5(secret)
                 val content=if(endpoint=="login/cellphone") obj("mobile" to arg("mobile"),"code" to arg("code")) else obj()
@@ -71,7 +72,7 @@ class KugouNativeInterceptor(private val sessions: KugouSessionStore) : Intercep
                 } else {
                     val k=if(lite) "c24f74ca2820225badc01946dba4fdf7" else "90b8382a1bb4ccdcf063102053fd75b8"
                     body["p3"]=Crypto.hex(Crypto.aes(obj("clienttime" to seconds,"token" to token).toString().toByteArray(),k,k.takeLast(16)))
-                    body["userid"]=uid;body["dfid"]=dfid;host="https://login.user.kugou.com";path="/v5/login_by_token"
+                    body["userid"]=uid;body["dfid"]=dfid;host=LOGIN_HOST;path="/v5/login_by_token"
                 }
                 if(lite) { body["dfid"]=dfid;body["dev"]=cookie("KUGOU_API_DEV");body["gitversion"]="5f0b7c4" }
                 else body["t3"]="MCwwLDAsMCwwLDAsMCwwLDA="
@@ -179,6 +180,7 @@ class KugouNativeInterceptor(private val sessions: KugouSessionStore) : Intercep
         }
     }
     companion object {
+        private const val LOGIN_HOST="https://login-user.kugou.com"
         const val COMMENT_CODE="fc4be23b4e972707f36b8a828a93ba8a"
         internal fun salt(lite: Boolean)=if(lite) "LnT6xpN3khm36zse0QzvmgTZ3waWdRSA" else "OIlwieks28dk2k092lksi2UIkp"
         internal fun signature(params: Map<String,Any?>,body: String,lite: Boolean,web: Boolean=false): String {

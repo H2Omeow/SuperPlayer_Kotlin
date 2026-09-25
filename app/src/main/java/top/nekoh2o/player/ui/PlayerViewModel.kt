@@ -333,6 +333,41 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun kgSendCode(phone: String, platform: Int) = kgRepo.sendCode(phone, platform)
 
+    suspend fun loadKgCookie(platform: Int): String {
+        CookieStore.awaitReady()
+        return CookieStore.kgCookieValue(platform)
+    }
+
+    suspend fun saveKgCookie(cookie: String, platform: Int): String {
+        CookieStore.awaitReady()
+        CookieStore.kgSessions.importCookie(platform, cookie)
+        if (platform == CookieStore.kgPlatformValue()) {
+            _ui.value = _ui.value.copy(kgAccount = KgAccountState(platform = platform))
+            refreshKgAccount()
+            schedulePush()
+        }
+        return CookieStore.kgCookieValue(platform)
+    }
+
+    suspend fun clearKgCookie(platform: Int) {
+        CookieStore.awaitReady()
+        CookieStore.kgSessions.clearCookie(platform)
+        if (platform == CookieStore.kgPlatformValue()) {
+            _ui.value = _ui.value.copy(kgAccount = KgAccountState(platform = platform))
+            schedulePush()
+        }
+    }
+
+    suspend fun logoutKgCookie(platform: Int): String {
+        CookieStore.awaitReady()
+        CookieStore.kgSessions.clearLogin(platform)
+        if (platform == CookieStore.kgPlatformValue()) {
+            _ui.value = _ui.value.copy(kgAccount = KgAccountState(platform = platform))
+            schedulePush()
+        }
+        return CookieStore.kgCookieValue(platform)
+    }
+
     suspend fun kgLogin(phone: String, code: String, platform: Int, userid: String? = null) {
         completeKgLogin(kgRepo.login(phone, code, platform, userid), platform)
     }
@@ -356,9 +391,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearKgAccount() {
         viewModelScope.launch {
-            CookieStore.clearKgToken()
-            _ui.value = _ui.value.copy(kgAccount = KgAccountState(platform = CookieStore.kgPlatformValue()))
-            schedulePush()
+            logoutKgCookie(CookieStore.kgPlatformValue())
             toast("已退出当前酷狗账号")
         }
     }

@@ -28,6 +28,12 @@ fun KugouAccountScreen(vm: PlayerViewModel, onBack: () -> Unit, onLogin: () -> U
     val state by vm.ui.collectAsState()
     val kgAccount = state.kgAccount
     var showVipDialog by remember { mutableStateOf(false) }
+    var showCookieManager by remember { mutableStateOf(false) }
+
+    if (showCookieManager) {
+        CookieManagerScreen(vm, initialProvider = "kugou") { showCookieManager = false }
+        return
+    }
 
     LaunchedEffect(Unit) {
         if (kgAccount.isValid) {
@@ -49,6 +55,7 @@ fun KugouAccountScreen(vm: PlayerViewModel, onBack: () -> Unit, onLogin: () -> U
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text("酷狗音乐账户") },
+            actions = { TextButton(onClick = { showCookieManager = true }) { Text("Cookie 管理") } },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")

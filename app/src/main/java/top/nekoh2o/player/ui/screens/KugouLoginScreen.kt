@@ -25,6 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.nekoh2o.player.data.model.*
 import top.nekoh2o.player.data.net.KugouApiException
+import top.nekoh2o.player.data.net.kugouLoginError
 import top.nekoh2o.player.ui.PlayerViewModel
 import top.nekoh2o.player.ui.theme.NekoDefaults
 
@@ -90,7 +91,7 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 } catch (e: CancellationException) { throw e
                 } catch (e: Exception) {
                     failures++
-                    error = loginError(e)
+                    error = kugouLoginError(e)
                     if (e is KugouApiException || failures >= 3) polling = false
                 }
             }
@@ -108,7 +109,7 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 finish()
             } catch (e: CancellationException) { throw e
             } catch (e: KugouAccountSelection) { accounts = e.accounts
-            } catch (e: Exception) { error = loginError(e)
+            } catch (e: Exception) { error = kugouLoginError(e)
             } finally { busy = false }
         }
     }
@@ -149,7 +150,7 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                                 deadline = SystemClock.elapsedRealtime() + 60000
                                 message = "验证码已发送"
                             } catch (e: CancellationException) { throw e
-                            } catch (e: Exception) { error = loginError(e)
+                            } catch (e: Exception) { error = kugouLoginError(e)
                             } finally { busy = false }
                         }
                     }) { Text(if (seconds > 0) seconds.toString() + "s" else "获取验证码") }
@@ -178,7 +179,7 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                             polling = true
                             message = "请使用" + if (platform == 1) "酷狗概念版扫码并确认" else "酷狗音乐 App 扫码并确认"
                         } catch (e: CancellationException) { throw e
-                        } catch (e: Exception) { error = loginError(e); message = ""
+                        } catch (e: Exception) { error = kugouLoginError(e); message = ""
                         } finally { busy = false }
                     }
                 }) { Text(if (busy) "获取中…" else if (qr == null) "获取二维码" else "刷新二维码") }
@@ -197,10 +198,4 @@ fun KugouLoginScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             }
         }
     }, confirmButton = {}, dismissButton = { TextButton(onClick = { accounts = emptyList() }) { Text("取消") } })
-}
-
-private fun loginError(error: Exception): String = when (error) {
-    is KugouApiException, is IllegalArgumentException -> error.message ?: "登录失败，请重试"
-    is java.io.IOException -> "网络连接失败，请检查网络后重试"
-    else -> "酷狗响应异常，请稍后重试"
 }

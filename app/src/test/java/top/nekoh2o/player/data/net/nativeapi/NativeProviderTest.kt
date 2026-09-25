@@ -79,6 +79,58 @@ class NativeProviderTest {
         val form=FormBody.Builder().add("tid","111").add("pid","222").add("is_t","0").add("content","回复中文").add("special_id","s").build()
         client.newCall(Request.Builder().url("https://native.invalid/kgapi/comment/floor/send?platform=0").post(form).build()).execute().close()
     }
+    @Test fun smsAndTokenLoginUseCertificateValidHostForBothPlatforms() {
+        val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("native_kg_login_host", Context.MODE_PRIVATE)
+        prefs.edit().clear().commit()
+        val sessions = KugouSessionStore(prefs)
+        for (platform in 0..1) {
+            val client = OkHttpClient.Builder().addInterceptor(KugouNativeInterceptor(sessions))
+                .addInterceptor { chain ->
+                    val request = chain.request()
+                    assertEquals("https", request.url.scheme)
+                    assertEquals("login-user.kugou.com", request.url.host)
+                    assertEquals(if (platform == 0) "1005" else "3116", request.url.queryParameter("appid"))
+                    assertEquals("POST", request.method)
+                    assertNull(request.header("Authorization"))
+                    assertNull(request.header("Cookie"))
+                    val buffer = okio.Buffer()
+                    request.body!!.writeTo(buffer)
+                    val body = buffer.readUtf8()
+                    val params = request.url.queryParameterNames.filter { it != "signature" }
+                        .associateWith { request.url.queryParameter(it) }
+                    assertEquals(KugouNativeInterceptor.signature(params, body, platform == 1), request.url.queryParameter("signature"))
+                    if (request.url.encodedPath == "/v7/send_mobile_code") {
+                        val payload = Json.parseToJsonElement(body).jsonObject
+                        assertEquals("invalid", payload.text("mobile"))
+                        assertEquals("5", payload.text("businessid"))
+                        assertNull(request.url.queryParameter("mobile"))
+                    } else assertEquals("/v5/login_by_token", request.url.encodedPath)
+                    jsonResponse(request, obj("status" to 0, "error_code" to 20010))
+                }.build()
+            for (endpoint in listOf("captcha/sent", "login/token")) {
+                val request = Request.Builder().url("https://native.invalid/kgapi/" + endpoint + "?platform=" + platform)
+                    .post(FormBody.Builder().add("mobile", "invalid").build()).build()
+                client.newCall(request).execute().close()
+            }
+        }
+    }
+
+    @Test fun smsLiveTransportRejectsInvalidNumberWithoutSendingMessages() {
+        org.junit.Assume.assumeTrue(System.getenv("KUGOU_LOGIN_SMOKE") == "1")
+        val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("native_kg_sms_smoke", Context.MODE_PRIVATE)
+        val client = OkHttpClient.Builder().followRedirects(false).callTimeout(20, TimeUnit.SECONDS)
+            .addInterceptor(KugouNativeInterceptor(KugouSessionStore(prefs))).build()
+        for (platform in 0..1) {
+            val request = Request.Builder().url("https://native.invalid/kgapi/captcha/sent?platform=" + platform)
+                .post(FormBody.Builder().add("mobile", "invalid").build()).build()
+            client.newCall(request).execute().use { response ->
+                assertEquals(200, response.code)
+                val body = Json.parseToJsonElement(response.body!!.string()).jsonObject
+                assertEquals("0", body.text("status"))
+                assertEquals(20010L, body.number("error_code"))
+            }
+        }
+    }
     @Test fun publicKugouSearchOmitsCredentialsAndPreservesChineseKeywords() {
         val prefs=RuntimeEnvironment.getApplication().getSharedPreferences("native_kg_search",Context.MODE_PRIVATE)
         prefs.edit().clear().commit();val sessions=KugouSessionStore(prefs)

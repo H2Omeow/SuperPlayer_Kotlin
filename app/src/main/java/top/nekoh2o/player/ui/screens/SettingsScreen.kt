@@ -451,12 +451,12 @@ private fun StorageSettings(
 @Composable
 private fun AccountSettings(vm: PlayerViewModel, onOpenCookieManager: () -> Unit) {
     Text(
-        "账户登录与网易云 Cookie 用于云端同步和获取完整音质。登录入口位于「我的」页面。",
+        "账户登录与音乐平台 Cookie 用于获取账号权限内的歌曲和音质。登录入口位于「我的」页面。",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
     Text(
-        "填写网易云 Cookie 可获取更高音质和完整歌曲",
+        "支持网易云以及酷狗原版、概念版的 Cookie 管理",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -464,7 +464,7 @@ private fun AccountSettings(vm: PlayerViewModel, onOpenCookieManager: () -> Unit
         onClick = { vm.loadNcCookie(); onOpenCookieManager() },
         modifier = Modifier.fillMaxWidth(),
         colors = NekoDefaults.outlinedButtonColors()
-    ) { Text("管理网易云 Cookie") }
+    ) { Text("管理网易云 / 酷狗 Cookie") }
 }
 
 @Composable
@@ -620,10 +620,12 @@ fun CacheManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 // ========== Cookie 管理页面 ==========
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
+fun CookieManagerScreen(vm: PlayerViewModel, initialProvider: String = "netease", onBack: () -> Unit) {
     val state by vm.ui.collectAsState()
     var ncCookieText by remember { mutableStateOf(state.ncCookie) }
+    var provider by remember { mutableStateOf(initialProvider) }
 
+    LaunchedEffect(Unit) { vm.loadNcCookie() }
     LaunchedEffect(state.ncCookie) { ncCookieText = state.ncCookie }
 
     Column(Modifier.fillMaxSize()) {
@@ -643,71 +645,72 @@ fun CookieManagerScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 网易云Cookie
-            Text(
-                "网易云 Cookie",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            Text(
-                "填写网易云 Cookie 可获取更高音质和完整歌曲。" +
-                        "在网页版网易云音乐登录后，打开浏览器开发者工具，复制请求头中的 Cookie 值粘贴到此处。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            OutlinedTextField(
-                value = ncCookieText,
-                onValueChange = { ncCookieText = it },
-                label = { Text("网易云 Cookie") },
-                modifier = Modifier.fillMaxWidth().height(160.dp),
-                maxLines = 6,
-                colors = NekoDefaults.textFieldColors()
-            )
-
-            if (ncCookieText.length > 200) {
-                Text(
-                    "Cookie 内容已截断显示，实际长度：${ncCookieText.length} 字符",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { vm.saveNcCookie(ncCookieText) },
-                    modifier = Modifier.weight(1f)
-                ) { Text("保存") }
-                OutlinedButton(
-                    onClick = {
-                        ncCookieText = ""
-                        vm.saveNcCookie("")
-                    },
-                    colors = NekoDefaults.outlinedButtonColors()
-                ) { Text("清除") }
+                listOf("netease" to "网易云", "kugou" to "酷狗音乐").forEach { (key, title) ->
+                    FilterChip(selected = provider == key, onClick = { provider = key },
+                        label = { Text(title) }, modifier = Modifier.weight(1f))
+                }
             }
-
-            if (state.ncCookie.isNotEmpty()) {
-                Text(
-                    "当前 Cookie 已设置（${state.ncCookie.take(30)}…）",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+            if (provider == "kugou") {
+                KugouCookieEditor(vm)
             } else {
                 Text(
-                    "当前未设置 Cookie，将使用游客模式",
+                    "网易云 Cookie",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                Text(
+                    "填写网易云 Cookie 可获取更高音质和完整歌曲。" +
+                            "在网页版网易云音乐登录后，打开浏览器开发者工具，复制请求头中的 Cookie 值粘贴到此处。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
 
-            HorizontalDivider()
+                OutlinedTextField(
+                    value = ncCookieText,
+                    onValueChange = { ncCookieText = it },
+                    label = { Text("网易云 Cookie") },
+                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                    maxLines = 6,
+                    colors = NekoDefaults.textFieldColors()
+                )
 
-            Text("酷狗音乐账号", style = MaterialTheme.typography.titleMedium)
-            Text("请在酷狗账号页面使用验证码或扫码登录。登录凭据和设备信息由应用自动保存。",
-                style = MaterialTheme.typography.bodySmall)
-            if (state.kgAccount.isValid) {
-                OutlinedButton(onClick = { vm.clearKgAccount() }) { Text("退出当前酷狗账号") }
+                if (ncCookieText.length > 200) {
+                    Text(
+                        "Cookie 内容已截断显示，实际长度：${ncCookieText.length} 字符",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { vm.saveNcCookie(ncCookieText) },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("保存") }
+                    OutlinedButton(
+                        onClick = {
+                            ncCookieText = ""
+                            vm.saveNcCookie("")
+                        },
+                        colors = NekoDefaults.outlinedButtonColors()
+                    ) { Text("清除") }
+                }
+
+                if (state.ncCookie.isNotEmpty()) {
+                    Text(
+                        "当前网易云 Cookie 已设置",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Text(
+                        "当前未设置 Cookie，将使用游客模式",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
             }
 
         }
