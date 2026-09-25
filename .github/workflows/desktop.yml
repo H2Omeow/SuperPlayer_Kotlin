@@ -122,7 +122,19 @@ jobs:
       - name: Collect verified packages
         run: |
           mkdir release
-          find artifacts -type f \( -name 'NekoPlayer-*.zip' -o -name 'NekoPlayer-*.tar.gz' -o -name 'ffmpeg-8.1.2.tar.xz' \) -exec cp -t release {} +
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          root = Path('artifacts')
+          destination = Path('release')
+          packages = [p for p in root.rglob('*') if p.is_file() and (p.name.endswith('.zip') or p.name.endswith('.tar.gz')) and p.name.startswith('NekoPlayer-')]
+          assert len(packages) == 7, f'Expected 7 desktop archives, found {len(packages)}: {packages}'
+          for package in packages:
+              shutil.copy2(package, destination / package.name)
+          source = next((p for p in root.rglob('ffmpeg-8.1.2.tar.xz') if p.is_file()), None)
+          assert source is not None, 'FFmpeg source archive missing'
+          shutil.copy2(source, destination / source.name)
+          PY
           cd release
           sha256sum * > desktop-SHA256SUMS.txt
       - name: Attach to release after APK publisher
