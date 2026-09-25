@@ -2,6 +2,9 @@
 #define AUDIO_DSP_H
 
 #include <cmath>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include <algorithm>
 
 namespace neko_dsp {
