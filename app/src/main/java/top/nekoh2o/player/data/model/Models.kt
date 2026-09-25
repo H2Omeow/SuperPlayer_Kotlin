@@ -217,7 +217,8 @@ data class UserData(
     val playlists: List<Playlist> = emptyList(),
     val ncCookie: String = "",
     val kgToken: String = "",
-    val kgPlatform: Int = 0
+    val kgPlatform: Int = 0,
+    val kgCookies: List<String> = emptyList()
 )
 
 // ==================== 壁纸 /local/wallpaper/list ====================

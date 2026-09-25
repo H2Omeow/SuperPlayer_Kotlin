@@ -49,7 +49,10 @@ internal class AccountsDialog(owner: JFrame, private val onSiteLogin: () -> Unit
             add(row(button("网易云扫码登录") { qr(false) }, button("管理网易云 Cookie") { cookies(null) }))
         }
         val kugou = JPanel(GridLayout(0,1,6,6)).apply {
-            add(row(platform, button("设为当前平台") { val p = platform.selectedIndex; task("切换平台…") { withContext(Dispatchers.IO) { CookieStore.setKgPlatform(p) }; refresh() } }))
+            add(row(platform, button("设为当前平台") { val p = platform.selectedIndex; task("切换平台…") {
+                withContext(Dispatchers.IO) { CookieStore.setKgPlatform(p); syncCredentialsIfLoggedIn() }
+                refresh()
+            } }))
             add(row(JLabel("手机号"), phone, sendSms))
             add(row(JLabel("验证码"), code, button("短信登录") { smsLogin() }))
             add(row(button("酷狗扫码登录") { qr(true) }, button("管理该平台 Cookie") { cookies(platform.selectedIndex) }))
@@ -99,7 +102,8 @@ internal class AccountsDialog(owner: JFrame, private val onSiteLogin: () -> Unit
                 val selected = JOptionPane.showInputDialog(this@AccountsDialog, "选择手机号绑定的账号", "酷狗", JOptionPane.PLAIN_MESSAGE, null, names, names.first()) ?: return@task
                 withContext(Dispatchers.IO) { kg.login(number, verification, p, e.accounts[names.indexOf(selected)].userid.toString()) }
             }
-            withContext(Dispatchers.IO) { CookieStore.setKgPlatform(p) }; code.text = ""; refresh(); status.text = "酷狗登录成功"
+            withContext(Dispatchers.IO) { CookieStore.setKgPlatform(p); syncCredentialsIfLoggedIn() }
+            code.text = ""; refresh(); status.text = "酷狗登录成功，凭据已同步"
         }
     }
     private fun qr(isKugou: Boolean) {
@@ -116,7 +120,8 @@ internal class AccountsDialog(owner: JFrame, private val onSiteLogin: () -> Unit
                         val result = withContext(Dispatchers.IO) { if (kgSession != null) kg.checkLoginQR(kgSession).status else nc.qrCheck(ncKey) }
                         if ((isKugou && result == 4) || (!isKugou && result == 803)) {
                             if (isKugou) withContext(Dispatchers.IO) { CookieStore.setKgPlatform(p) }
-                            refresh(); status.text = "扫码登录成功"; image.icon = null; image.text = "登录成功"; break
+                            withContext(Dispatchers.IO) { syncCredentialsIfLoggedIn() }
+                            refresh(); status.text = "扫码登录成功，凭据已同步"; image.icon = null; image.text = "登录成功"; break
                         }
                         if ((!isKugou && result == 800) || (isKugou && result == 0)) { status.text = "二维码已过期，请重新生成"; break }
                         status.text = if (result == 2 || result == 802) "已扫码，请在手机上确认" else "等待扫码…"
@@ -140,6 +145,7 @@ internal class AccountsDialog(owner: JFrame, private val onSiteLogin: () -> Unit
                     require(raw.isEmpty() || raw.split(';').any { it.trim().startsWith("MUSIC_U=") && it.trim().length > 8 }) { "请提供含 MUSIC_U 的登录 Cookie" }
                     CookieStore.setUserCookie(raw)
                 } else when(choice) { 0 -> CookieStore.kgSessions.importCookie(p, text.text); 1 -> CookieStore.kgSessions.clearLogin(p); 2 -> CookieStore.kgSessions.clearCookie(p) }
+                syncCredentialsIfLoggedIn()
             }
             refresh()
         }
@@ -166,18 +172,12 @@ internal class AccountsDialog(owner: JFrame, private val onSiteLogin: () -> Unit
         }
     }
     private suspend fun syncSiteData() = withContext(Dispatchers.IO) {
-        val remote = ApiFactory.user.pullData()
-        require(remote.code == 0) { "云端数据读取失败，请稍后在歌单菜单重试" }
-        val local = Library()
-        remote.data?.let(local::merge)
-        val base = remote.data ?: top.nekoh2o.player.data.model.UserData()
-        val merged = base.copy(
-            history = local.data.history,
-            favorites = local.data.favorites,
-            playlists = local.data.playlists
-        )
-        val pushed = ApiFactory.user.pushData(merged)
-        require(pushed.code == 0) { "云端未确认数据同步成功" }
+        DesktopCloudSync.sync()
+    }
+    private suspend fun syncCredentialsIfLoggedIn() {
+        if (CookieStore.appTokenValue().isNotBlank()) {
+            DesktopCloudSync.sync(credentialMode = CredentialSyncMode.LOCAL_AUTHORITATIVE)
+        }
     }
     private fun importSiteToken() {
         val raw = JOptionPane.showInputDialog(this, "粘贴本站登录令牌或 nekoplayer://auth 回调链接")?.trim() ?: return

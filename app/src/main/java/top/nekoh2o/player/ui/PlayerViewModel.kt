@@ -344,8 +344,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         if (platform == CookieStore.kgPlatformValue()) {
             _ui.value = _ui.value.copy(kgAccount = KgAccountState(platform = platform))
             refreshKgAccount()
-            schedulePush()
         }
+        schedulePush()
         return CookieStore.kgCookieValue(platform)
     }
 
@@ -354,8 +354,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         CookieStore.kgSessions.clearCookie(platform)
         if (platform == CookieStore.kgPlatformValue()) {
             _ui.value = _ui.value.copy(kgAccount = KgAccountState(platform = platform))
-            schedulePush()
         }
+        schedulePush()
     }
 
     suspend fun logoutKgCookie(platform: Int): String {
@@ -363,8 +363,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         CookieStore.kgSessions.clearLogin(platform)
         if (platform == CookieStore.kgPlatformValue()) {
             _ui.value = _ui.value.copy(kgAccount = KgAccountState(platform = platform))
-            schedulePush()
         }
+        schedulePush()
         return CookieStore.kgCookieValue(platform)
     }
 
@@ -825,9 +825,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearNcCookie() {
-        neteaseVm.clearNcCookie()
-        _ui.value = _ui.value.copy(ncCookie = "")
-        toast("Cookie 已清除")
+        neteaseVm.clearNcCookie {
+            _ui.value = _ui.value.copy(ncCookie = "")
+            schedulePush()
+            toast("Cookie 已清除")
+        }
     }
     fun setSleepTimer(minutes: Int) {
         sleepJob?.cancel()
@@ -1003,11 +1005,25 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             val remote = userRepo.pull() ?: return@launch
             local.mergeFromRemote(remote.history, remote.favorites, remote.playlists)
             if (remote.ncCookie.isNotEmpty()) {
-                CookieStore.setUserCookie(remote.ncCookie)
+                if (CookieStore.userCookieValue().isEmpty()) CookieStore.setUserCookie(remote.ncCookie)
             }
-            if (remote.kgToken.isNotEmpty()) {
-                CookieStore.setKgPlatform(remote.kgPlatform)
+            remote.kgCookies.take(2).forEachIndexed { platform, cookie ->
+                if (cookie.isNotEmpty() && CookieStore.kgCookieValue(platform).isEmpty()) {
+                    if (cookie.contains("userid=")) {
+                        CookieStore.kgSessions.importCookie(platform, cookie)
+                    } else {
+                        CookieStore.kgSessions.merge(
+                            platform,
+                            mapOf("token" to cookie.removePrefix("token="))
+                        )
+                    }
+                }
+            }
+            if (CookieStore.kgCookieValue(remote.kgPlatform.coerceIn(0, 1)).isEmpty() && remote.kgToken.isNotEmpty()) {
+                CookieStore.setKgPlatform(remote.kgPlatform.coerceIn(0, 1))
                 CookieStore.setKgToken(remote.kgToken)
+            } else if (CookieStore.kgCookieValue().isEmpty() && remote.kgCookies.any(String::isNotEmpty)) {
+                CookieStore.setKgPlatform(remote.kgPlatform.coerceIn(0, 1))
             }
             pushMineToState()
             schedulePush()
@@ -1026,7 +1042,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 playlists = local.playlists.toList(),
                 ncCookie = CookieStore.userCookieValue(),
                 kgToken = CookieStore.kgTokenValue(),
-                kgPlatform = CookieStore.kgPlatformValue()
+                kgPlatform = CookieStore.kgPlatformValue(),
+                kgCookies = List(2, CookieStore::kgCookieValue)
             )
         }
     }

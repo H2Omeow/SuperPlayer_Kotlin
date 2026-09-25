@@ -38,9 +38,10 @@ class NeteaseAccountViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * 清除网易云 Cookie
      */
-    fun clearNcCookie() {
+    fun clearNcCookie(onSchedulePush: () -> Unit = {}) {
         viewModelScope.launch {
             CookieStore.setUserCookie("")
+            onSchedulePush()
         }
     }
 

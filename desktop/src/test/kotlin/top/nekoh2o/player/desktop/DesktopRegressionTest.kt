@@ -3,6 +3,7 @@ package top.nekoh2o.player.desktop
 import kotlinx.coroutines.*
 import okhttp3.mockwebserver.*
 import top.nekoh2o.player.data.net.KugouSessionStore
+import top.nekoh2o.player.data.model.UserData
 import org.junit.Test
 import org.junit.Assert.*
 import java.nio.file.*
@@ -69,5 +70,28 @@ class DesktopRegressionTest {
             library.favorite(nc); library.favorite(kg); library.played(nc); library.played(nc)
             assertEquals(2, Library(prefs).data.favorites.size); assertEquals(1, Library(prefs).data.history.size)
         } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test fun cloudCredentialsFillMissingLocalCookiesWithoutOverwritingCurrentLogin() {
+        val local = CloudCredentials("local-nc", listOf("", "local-lite"), 1)
+        val remote = UserData(
+            ncCookie = "remote-nc",
+            kgToken = "legacy-token",
+            kgPlatform = 0,
+            kgCookies = listOf("token=remote; userid=123", "remote-lite")
+        )
+        val merged = CloudCredentials.merge(local, remote)
+        assertEquals("local-nc", merged.ncCookie)
+        assertEquals("token=remote; userid=123", merged.kgCookies[0])
+        assertEquals("local-lite", merged.kgCookies[1])
+        assertEquals(1, merged.kgPlatform)
+    }
+
+    @Test fun localAuthoritativeCredentialSnapshotPreservesExplicitClears() {
+        val local = CloudCredentials("", listOf("", "token=lite; userid=456"), 1)
+        assertEquals("", local.ncCookie)
+        assertEquals("", local.kgCookies[0])
+        assertEquals("token=lite; userid=456", local.kgCookies[1])
+        assertEquals(1, local.kgPlatform)
     }
 }
