@@ -10,10 +10,13 @@ data class Song(
     val nm: String,
     val ar: String,
     val pc: String? = null,
-    val source: String = "netease",  // netease | kugou
+    val source: String = "netease",  // netease | kugou | animemusic-*
     val hash: String = "",
     val albumId: String = "",
-    val albumAudioId: Long = 0
+    val albumAudioId: Long = 0,
+    /** Underlying provider used by the external aggregation source (kg/kw/wy/tx/mg/bilibili). */
+    val providerSource: String = "",
+    val providerMediaId: String = ""
 )
 
 // 自定义歌单（对应 web customPlaylists）

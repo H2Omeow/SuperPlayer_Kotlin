@@ -64,7 +64,7 @@ fun MusicScreen(vm: PlayerViewModel) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        // 音乐源切换按钮
+        // 音乐源分组：保留原有平台，并将聚合源的具体平台放入独立分组
         Row(
             Modifier
                 .fillMaxWidth()
@@ -83,6 +83,31 @@ fun MusicScreen(vm: PlayerViewModel) {
                 label = { Text("酷狗音乐") },
                 modifier = Modifier.weight(1f)
             )
+        }
+        var animemusicExpanded by remember { mutableStateOf(state.musicSource.startsWith("animemusic-")) }
+        FilterChip(
+            selected = state.musicSource.startsWith("animemusic-"),
+            onClick = {
+                animemusicExpanded = !animemusicExpanded
+                if (!state.musicSource.startsWith("animemusic-")) vm.switchMusicSource("animemusic-kg")
+            },
+            label = { Text("惜缘惜梦音源") },
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+        )
+        if (animemusicExpanded || state.musicSource.startsWith("animemusic-")) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                items(top.nekoh2o.player.data.repo.AnimemusicRepository.platforms) { (id, label) ->
+                    FilterChip(
+                        selected = state.musicSource == "animemusic-$id",
+                        onClick = { vm.switchMusicSource("animemusic-$id") },
+                        label = { Text(label) }
+                    )
+                }
+            }
         }
 
         // 搜索框
@@ -310,10 +335,10 @@ private fun ArtistDetailScreen(
                     Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) { Text("暂无歌曲") }
                 }
             } else {
-                items(list, key = { it.id }) { song ->
+        items(list, key = { songKey(it) }) { song ->
                     SongRow(
                         song = song,
-                        isFav = vm.isFav(song.id),
+                        isFav = vm.isFav(song),
                         onPlay = { vm.playNow(song) },
                         onAdd = { vm.addToQueue(song) },
                         onFav = { vm.toggleFav(song) },
@@ -400,10 +425,10 @@ private fun AlbumDetailScreen(
                     Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) { Text("暂无歌曲") }
                 }
             } else {
-                items(list, key = { it.id }) { song ->
+                items(list, key = { songKey(it) }) { song ->
                     SongRow(
                         song = song,
-                        isFav = vm.isFav(song.id),
+                        isFav = vm.isFav(song),
                         onPlay = { vm.playNow(song) },
                         onAdd = { vm.addToQueue(song) },
                         onFav = { vm.toggleFav(song) },
@@ -460,10 +485,10 @@ private fun RecommendContent(vm: PlayerViewModel, onAddToPlaylist: (Song) -> Uni
                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
             )
         }
-        items(state.recSongs, key = { it.id }) { song ->
+        items(state.recSongs, key = { songKey(it) }) { song ->
             SongRow(
                 song = song,
-                isFav = vm.isFav(song.id),
+                isFav = vm.isFav(song),
                 onPlay = { vm.playNow(song) },
                 onAdd = { vm.addToQueue(song) },
                 onFav = { vm.toggleFav(song) },
@@ -481,10 +506,10 @@ private fun SearchResultList(
     onAddToPlaylist: (Song) -> Unit
 ) {
     LazyColumn(Modifier.fillMaxSize()) {
-        items(results, key = { it.id }) { song ->
+        items(results, key = { songKey(it) }) { song ->
             SongRow(
                 song = song,
-                isFav = vm.isFav(song.id),
+                isFav = vm.isFav(song),
                 onPlay = { vm.playNow(song) },
                 onAdd = { vm.addToQueue(song) },
                 onFav = { vm.toggleFav(song) },
@@ -546,7 +571,7 @@ fun SongRow(
             Column(Modifier.weight(1f)) {
                 Text(song.nm, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    song.ar, style = MaterialTheme.typography.bodySmall,
+                    "${song.ar} · ${songSourceLabel(song)}", style = MaterialTheme.typography.bodySmall,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
@@ -592,6 +617,15 @@ fun SongRow(
             Icon(Icons.Filled.Add, contentDescription = "加入队列")
         }
     }
+}
+
+private fun songKey(song: Song): String = song.source + ":" + song.hash.ifBlank { song.id.toString() }
+
+private fun songSourceLabel(song: Song): String = when {
+    song.source == "netease" -> "网易云"
+    song.source == "kugou" -> "酷狗"
+    song.source.startsWith("animemusic-") -> "惜缘惜梦·${top.nekoh2o.player.data.repo.AnimemusicRepository.label(song.providerSource)}"
+    else -> song.source
 }
 
 @Composable

@@ -13,6 +13,7 @@ import top.nekoh2o.player.data.model.SearchType
 import top.nekoh2o.player.data.model.Song
 import top.nekoh2o.player.data.repo.KugouRepository
 import top.nekoh2o.player.data.repo.MusicRepository
+import top.nekoh2o.player.data.repo.AnimemusicRepository
 
 /**
  * 搜索功能 ViewModel
@@ -22,6 +23,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = MusicRepository()
     private val kgRepo = KugouRepository()
+    private val animemusicRepo = AnimemusicRepository()
 
     private var suggestJob: Job? = null
     private var searchOffset = 0
@@ -45,6 +47,8 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             delay(300)
             val suggestions = if (musicSource == "kugou") {
                 runCatching { kgRepo.searchSuggest(query.trim()) }.getOrDefault(emptyList())
+            } else if (musicSource.startsWith("animemusic-")) {
+                emptyList()
             } else {
                 runCatching { repo.suggest(query.trim()) }.getOrDefault(emptyList())
             }
@@ -68,7 +72,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
         return when (searchType) {
             SearchType.SONG -> {
-                val list = if (musicSource == "kugou") {
+                val list = if (musicSource.startsWith("animemusic-")) {
+                    runCatching { animemusicRepo.search(musicSource.removePrefix("animemusic-"), kw, 1).songs }.getOrDefault(emptyList())
+                } else if (musicSource == "kugou") {
                     runCatching { kgRepo.search(kw, 1) }.getOrDefault(emptyList())
                 } else {
                     runCatching { repo.search(kw, 0) }.getOrDefault(emptyList())
@@ -105,7 +111,10 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
         return try {
             when (searchType) {
                 SearchType.SONG -> {
-                    val more = if (musicSource == "kugou") {
+                    val more = if (musicSource.startsWith("animemusic-")) {
+                        val page = (searchOffset / 30) + 1
+                        runCatching { animemusicRepo.search(musicSource.removePrefix("animemusic-"), searchKeyword, page).songs }.getOrDefault(emptyList())
+                    } else if (musicSource == "kugou") {
                         val page = (searchOffset / 30) + 1
                         runCatching { kgRepo.search(searchKeyword, page) }.getOrDefault(emptyList())
                     } else {

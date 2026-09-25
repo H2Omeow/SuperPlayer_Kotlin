@@ -18,6 +18,7 @@ object ApiFactory {
 
     const val BASE = "https://player.nekoh2o.top/"
     const val PLAYER_HOST = "player.nekoh2o.top"
+    const val ANIMEMUSIC_BASE = "https://animemusic.bzxhkj.com/v1/index.php/"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -102,5 +103,6 @@ object ApiFactory {
     }
 
     val nativeMusic: ProviderApi by lazy { retrofit(BASE, nativeNetease).create(ProviderApi::class.java) }
+    val animemusic: AnimemusicApi by lazy { retrofit(ANIMEMUSIC_BASE).create(AnimemusicApi::class.java) }
     fun client(): OkHttpClient = httpClient
 }

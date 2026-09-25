@@ -195,3 +195,8 @@ resolveUser(req) 必须验证请求的 Bearer JWT 并返回 { user: { id, userna
 - [Jetpack Compose](https://developer.android.com/jetpack/compose)
 - [Media3](https://developer.android.com/guide/topics/media/media3)
 - [Coil](https://coil-kt.github.io/coil/)
+
+### 惜缘惜梦音源（1.1.0-pre）
+- 音乐页新增独立的 **惜缘惜梦音源** 分组，可在其中单独切换酷狗、酷我、网易、QQ、咪咕和 B 站。
+- 搜索结果沿用统一播放、音质查询、下载和歌词流程，并在歌曲卡片显示实际来源。
+- 该音源使用公开的 animemusic v1 接口；第三方服务不可用时，网易云和酷狗原有音源不受影响。

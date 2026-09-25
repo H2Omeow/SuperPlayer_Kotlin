@@ -21,6 +21,14 @@ class SongQualityRepository internal constructor(
     private suspend fun candidates(song: Song, download: Boolean): List<AudioQuality> {
         discovery?.let { return it(song, download) }
         CookieStore.awaitReady();ApiFactory.awaitReady()
+        if (song.source.startsWith("animemusic-")) {
+            return listOf(
+                AudioQuality("128k", "标准 128k", 0),
+                AudioQuality("320k", "高品质 320k", 2),
+                AudioQuality("flac", "无损 FLAC", 3),
+                AudioQuality("hires", "Hi-Res", 4)
+            )
+        }
         if(song.source=="kugou") {
             require(song.hash.matches(Regex("[a-fA-F0-9]{32}"))) { "歌曲缺少酷狗 hash，请重新搜索该歌曲" }
             KugouRepository().ensureInitialized()
@@ -69,6 +77,10 @@ class SongQualityRepository internal constructor(
 
     private suspend fun probe(song: Song, choice: AudioQuality, download: Boolean): ResolvedAudio? {
         urlResolver?.let { return it(song, choice, download) }
+        if (song.source.startsWith("animemusic-")) {
+            val url = AnimemusicRepository().resolveUrl(song, choice.id) ?: return null
+            return ResolvedAudio(choice, url)
+        }
         if(song.source=="kugou") {
             val body=ApiFactory.kugou.get("song/url",CookieStore.kgPlatformValue(),mapOf(
                 "hash" to choice.hash.ifBlank { song.hash },"album_id" to song.albumId.ifBlank { "0" },
