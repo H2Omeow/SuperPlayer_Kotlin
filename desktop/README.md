@@ -6,9 +6,11 @@ Kotlin/JVM、Swing/FlatLaf 桌面应用，复用 Android 的原生 API、音质�
 
 下载对应架构的 Release 压缩包并完整解压。已包含 Java 运行时、FFmpeg 和音效库，无需另行安装。
 
+Windows 用户直接双击 **NekoPlayer.exe**；NekoPlayer.vbs 与 NekoPlayer.cmd 作为兼容和诊断入口保留。
+
 | 系统 | 架构 | 启动 |
 | --- | --- | --- |
-| Windows 10/11 | x64、x86（32 位）、ARM64 | `NekoPlayer.vbs`；诊断使用 `NekoPlayer.cmd` |
+| Windows 10/11 | x64、x86（32 位）、ARM64 | `NekoPlayer.exe`；兼容入口 `NekoPlayer.vbs`，诊断入口 `NekoPlayer.cmd` |
 | Linux glibc 2.35+ | x64、x86（32 位）、ARM64、ARMv7 hard-float（32 位） | `./NekoPlayer` |
 
 Linux 需要桌面会话和 X11/ALSA/字体库；Wayland 需要 XWayland。Debian/Ubuntu 可安装 `libasound2`（新版本为 `libasound2t64`）、`libx11-6`、`libxext6`、`libxi6`、`libxrender1`、`libxtst6`、`libfreetype6`、`fontconfig`、`fonts-noto-cjk`。不支持 Alpine/musl。Windows 便携包未使用商业代码签名证书。

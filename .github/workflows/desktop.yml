@@ -88,6 +88,9 @@ jobs:
           $app = (Get-ChildItem smoke -Directory | Select-Object -First 1).FullName
           & "$app/runtime/bin/java.exe" "-Dnekoplayer.home=$app" "-Djava.library.path=$app/native" -cp "$app/lib/*" top.nekoh2o.player.desktop.MainKt --self-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "$app/NekoPlayer.exe")) { throw 'NekoPlayer.exe is missing' }
+          & "$app/NekoPlayer.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run packaged decoder and JNI on Linux
         if: runner.os == 'Linux'
         env:

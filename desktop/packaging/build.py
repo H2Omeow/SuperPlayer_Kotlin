@@ -74,6 +74,7 @@ def build(target):
         cc, cxx = prefix + "clang", prefix + "clang++"
         cross = ["--enable-cross-compile", "--target-os=mingw32", "--cross-prefix=" + prefix]
         native = build_dir / "nekoplayer_audio_effects.dll"
+        launcher_binary = build_dir / "NekoPlayer.exe"
         include_platform = DESKTOP / "native" / "jni" / "win32"
         flags = ["-static", "-Wl,--kill-at"] if arch == "x86" else ["-static"]
         ffarch = {"x64": "x86_64", "x86": "x86", "arm64": "aarch64"}[arch]
@@ -94,6 +95,9 @@ def build(target):
     run([cxx, "-O2", "-std=c++17", "-fPIC", "-shared", *flags,
          "-I" + str(Path(os.environ["JAVA_HOME"]) / "include"), "-I" + str(include_platform),
          ROOT / "app/src/main/cpp/native-audio-effects.cpp", "-o", native], env=env)
+    if windows:
+        run([cxx, "-O2", "-std=c++17", "-municode", "-mwindows", "-static",
+             DESKTOP / "native/windows-launcher.cpp", "-o", launcher_binary], env=env)
     ffbuild = build_dir / "ffmpeg-build"
     ffbuild.mkdir(exist_ok=True)
     configure = [str(source / "configure"), "--arch=" + ffarch, "--cc=" + cc, "--cxx=" + cxx,
@@ -108,13 +112,15 @@ def build(target):
     ffmpeg = ffbuild / ("ffmpeg.exe" if windows else "ffmpeg")
     if not ffmpeg.is_file():
         raise RuntimeError("FFmpeg binary missing")
-    stage = DESKTOP / "build" / "stage" / ("NekoPlayer-1.0.9-pre-" + target)
+    stage = DESKTOP / "build" / "stage" / ("NekoPlayer-1.0.9-" + target)
     shutil.rmtree(stage, ignore_errors=True)
     (stage / "native").mkdir(parents=True)
     shutil.copytree(runtime, stage / "runtime", symlinks=True)
     shutil.copytree(DESKTOP / "build/install/NekoPlayer-desktop/lib", stage / "lib")
     shutil.copy2(native, stage / "native" / native.name)
     shutil.copy2(ffmpeg, stage / "native" / ffmpeg.name)
+    if windows:
+        shutil.copy2(launcher_binary, stage / launcher_binary.name)
     licenses = stage / "licenses"
     licenses.mkdir()
     shutil.copy2(source / "COPYING.LGPLv2.1", licenses / "FFmpeg-LGPL-2.1.txt")
@@ -125,7 +131,7 @@ def build(target):
     shutil.copy2(DESKTOP / "README.md", stage / "DESKTOP.md")
     shutil.copytree(ROOT / "app/src/main/assets/licenses", licenses / "providers", dirs_exist_ok=True)
     shutil.copy2(DESKTOP / "packaging/dependencies.json", stage / "dependencies.json")
-    manifest = {"target": target, "version": "1.0.9-pre", "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+    manifest = {"target": target, "version": "1.0.9", "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                 "ffmpeg_source": PINS["ffmpeg"], "ffmpeg_configure": configure, "runtime": PINS["runtimes"][target]}
     (stage / "build-info.json").write_text(json.dumps(manifest, indent=2) + "\n")
     if windows:
@@ -139,8 +145,11 @@ def build(target):
     # Each published binary is checked for the requested machine type before packaging.
     from verify import verify_machine
     expected = {"x64": "x64", "x86": "x86", "arm64": "arm64", "armv7": "armv7"}[arch]
-    for file in (stage / "native" / native.name, stage / "native" / ffmpeg.name,
-                 stage / "runtime/bin" / ("java.exe" if windows else "java")):
+    verified_files = [stage / "native" / native.name, stage / "native" / ffmpeg.name,
+                      stage / "runtime/bin" / ("java.exe" if windows else "java")]
+    if windows:
+        verified_files.append(stage / "NekoPlayer.exe")
+    for file in verified_files:
         verify_machine(file, expected)
     dist = DESKTOP / "build/dist"
     dist.mkdir(exist_ok=True)

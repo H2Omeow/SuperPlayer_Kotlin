@@ -53,7 +53,7 @@ internal class SongTable : AbstractTableModel() {
     }
 }
 
-internal class PlayerWindow : JFrame("NekoPlayer · Desktop 1.0.9-pre") {
+internal class PlayerWindow : JFrame("NekoPlayer · Desktop 1.0.9") {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Swing)
     private val library = Library()
     private val player = DesktopPlayer()
@@ -109,7 +109,7 @@ internal class PlayerWindow : JFrame("NekoPlayer · Desktop 1.0.9-pre") {
         nav("设置与音质") { settings() }
         nav("下载目录") { val dir = downloadDirectory(); Files.createDirectories(dir); Desktop.getDesktop().open(dir.toFile()) }
         sidebar.add(Box.createVerticalGlue())
-        sidebar.add(JLabel("1.0.9-pre · 桌面预览").apply { foreground = Color.GRAY })
+        sidebar.add(JLabel("1.0.9 · 桌面版").apply { foreground = Color.GRAY })
         root.add(sidebar, BorderLayout.WEST)
         val center = JPanel(BorderLayout(8, 16))
         val header = JPanel(BorderLayout(0, 16))
