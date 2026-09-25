@@ -1,6 +1,13 @@
 # NekoPlayer
 
-一个基于 Android 的现代化音乐播放器，支持网易云与酷狗音乐曲库。
+支持 Android、Windows 和 Linux 的音乐播放器，接入网易云与酷狗音乐曲库。
+
+## 桌面版（1.0.9-pre）
+
+- Windows：x64、x86（32 位）、ARM64；Linux：x64、x86、ARM64、ARMv7 hard-float。
+- 独立便携包包含 Java、FFmpeg 和 C++ 音效库；支持搜索、播放、音质选择、下载、登录、Cookie、歌词、歌单与评论。
+- 桌面播放输出为 48 kHz / 16-bit 双声道，下载保留原文件；大文件首次播放需等待完整缓冲。
+- [安装、功能范围与构建说明](desktop/README.md)。下列 Material Design、悬浮歌词、系统音效等设备专属功能指 Android 版本。
 
 ## 特性
 

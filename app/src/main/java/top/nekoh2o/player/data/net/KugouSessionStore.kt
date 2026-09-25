@@ -1,11 +1,10 @@
 package top.nekoh2o.player.data.net
 
-import android.content.SharedPreferences
 import okhttp3.Cookie
 import okhttp3.HttpUrl
 
 /** Separate standard/lite cookies; neither session shares the application's SSO cookie jar. */
-class KugouSessionStore(private val prefs: SharedPreferences) {
+class KugouSessionStore(private val prefs: ProviderPreferences) {
     private val sessions = Array(2) { platform -> parse(prefs.getString("cookies_" + platform, "").orEmpty()) }
 
     @Synchronized fun value(platform: Int, name: String): String = sessions[checked(platform)][name].orEmpty()

@@ -1,6 +1,6 @@
 package top.nekoh2o.player.data.net.nativeapi
 
-import android.content.SharedPreferences
+import top.nekoh2o.player.data.net.ProviderPreferences
 import kotlinx.serialization.json.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -9,7 +9,7 @@ import top.nekoh2o.player.data.net.CookieStore
 import java.io.IOException
 
 /** Native equivalents of NeteaseCloudMusicApi modules; no Node bridge is used. */
-class NeteaseNativeInterceptor(private val prefs: SharedPreferences) : Interceptor {
+class NeteaseNativeInterceptor(private val prefs: ProviderPreferences) : Interceptor {
     private val device = prefs.getString("device", null)?.takeIf { it.matches(Regex("[A-F0-9]{52}")) } ?: Crypto.randomHex(26).uppercase().also { prefs.edit().putString("device", it).apply() }
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()

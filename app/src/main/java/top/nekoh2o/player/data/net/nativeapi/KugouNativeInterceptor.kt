@@ -48,9 +48,9 @@ class KugouNativeInterceptor(private val sessions: KugouSessionStore) : Intercep
             "register/dev" -> {
                 host="https://userservice.kugou.com";path="/risk/v2/r_register_dev";method="POST"
                 val device=linkedMapOf<String,Any?>("availableRamSize" to 4983533568L,"availableRomSize" to 48114719,"availableSDSize" to 48114717,
-                    "basebandVer" to "","batteryLevel" to 100,"batteryStatus" to 3,"brand" to android.os.Build.BRAND,
-                    "buildSerial" to "unknown","device" to android.os.Build.DEVICE,"imei" to cookie("KUGOU_API_GUID"),"imsi" to "",
-                    "manufacturer" to android.os.Build.MANUFACTURER,"uuid" to cookie("KUGOU_API_GUID"))
+                    "basebandVer" to "","batteryLevel" to 100,"batteryStatus" to 3,"brand" to NativePlatform.brand,
+                    "buildSerial" to "unknown","device" to NativePlatform.device,"imei" to cookie("KUGOU_API_GUID"),"imsi" to "",
+                    "manufacturer" to NativePlatform.manufacturer,"uuid" to cookie("KUGOU_API_GUID"))
                 listOf("accelerometer","gravity","gyroscope","light","magnetic","orientation","pressure","step_counter","temperature").forEach { device[it]=false;device[it+"Value"]="" }
                 val secret=Crypto.randomText(6);registerKey=secret;val hash=Crypto.md5(secret)
                 rawBody=Crypto.b64(Crypto.aes(value(device).toString().toByteArray(),hash.take(16),hash.takeLast(16)))

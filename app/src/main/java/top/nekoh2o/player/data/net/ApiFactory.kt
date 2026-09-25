@@ -61,8 +61,8 @@ object ApiFactory {
 
         nativeNetease = httpClient.newBuilder().cookieJar(okhttp3.CookieJar.NO_COOKIES)
             .apply { interceptors().clear() }.followRedirects(false).callTimeout(30, TimeUnit.SECONDS)
-            .addInterceptor(top.nekoh2o.player.data.net.nativeapi.NeteaseNativeInterceptor(
-                context.getSharedPreferences("netease_native", Context.MODE_PRIVATE))).build()
+            .addInterceptor(top.nekoh2o.player.data.net.nativeapi.NeteaseNativeInterceptor(top.nekoh2o.player.data.net.AndroidProviderPreferences(
+                context.getSharedPreferences("netease_native", Context.MODE_PRIVATE)))).build()
         ready.complete(Unit)
     }
 

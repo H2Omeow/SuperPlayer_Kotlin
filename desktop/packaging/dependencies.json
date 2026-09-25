@@ -1,0 +1,96 @@
+{
+  "runtimes": {
+    "linux-x64": {
+      "url": "https://cdn.azul.com/zulu/bin/zulu21.52.203-ca-jre21.0.12.1-linux_x64.tar.gz",
+      "sha256": "170f31af477726931543e91a5c44dfef4b7117382800dfd962aaea9fbbca4e50",
+      "java_version": [
+        21,
+        0,
+        12,
+        1
+      ],
+      "arch": "x86",
+      "bits": 64
+    },
+    "linux-x86": {
+      "url": "https://cdn.azul.com/zulu/bin/zulu17.68.203-ca-jre17.0.20.1-linux_i686.tar.gz",
+      "sha256": "acda3a3a691df809f7b14b002b7a0db89f9a5733a537ac303fc88568ccb5a4ed",
+      "java_version": [
+        17,
+        0,
+        20,
+        1
+      ],
+      "arch": "x86",
+      "bits": 32
+    },
+    "linux-arm64": {
+      "url": "https://cdn.azul.com/zulu/bin/zulu21.52.203-ca-jre21.0.12.1-linux_aarch64.tar.gz",
+      "sha256": "519c4639c49b36cd3e37594e35ee4d54d207aef4325439baf6b3d70d4cd92b76",
+      "java_version": [
+        21,
+        0,
+        12,
+        1
+      ],
+      "arch": "arm",
+      "bits": 64
+    },
+    "linux-armv7": {
+      "url": "https://cdn.azul.com/zulu/bin/zulu17.68.203-ca-jre17.0.20.1-c2-linux_aarch32hf.tar.gz",
+      "sha256": "5bc7a28a7b14710ba1828249acf215491c382a204244e3f857baef8e74e9175c",
+      "java_version": [
+        17,
+        0,
+        20,
+        1
+      ],
+      "arch": "arm",
+      "bits": 32
+    },
+    "windows-x64": {
+      "url": "https://cdn.azul.com/zulu/bin/zulu21.52.203-ca-jre21.0.12.1-win_x64.zip",
+      "sha256": "37ad372b04da388c326f0507abec38b8e1d11e3bddf6128b215c8f0a06ff8177",
+      "java_version": [
+        21,
+        0,
+        12,
+        1
+      ],
+      "arch": "x86",
+      "bits": 64
+    },
+    "windows-x86": {
+      "url": "https://cdn.azul.com/zulu/bin/zulu17.68.203-ca-jre17.0.20.1-win_i686.zip",
+      "sha256": "685eb34766224f64b11c7cc8d5dab20ba96481818865149d01044a9df6ccfcbb",
+      "java_version": [
+        17,
+        0,
+        20,
+        1
+      ],
+      "arch": "x86",
+      "bits": 32
+    },
+    "windows-arm64": {
+      "url": "https://cdn.azul.com/zulu/bin/zulu21.52.203-ca-jre21.0.12.1-win_aarch64.zip",
+      "sha256": "9a5a1312e2db4c85578a72f8b7d35ed671147ccd8dab2718433d77f262186a20",
+      "java_version": [
+        21,
+        0,
+        12,
+        1
+      ],
+      "arch": "arm",
+      "bits": 64
+    }
+  },
+  "ffmpeg": {
+    "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz",
+    "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c"
+  },
+  "llvm_mingw": {
+    "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz",
+    "sha256": "bb7bb7654b33d5aa8712acb837c963b2e0c56352560c76105270a3268c665c21"
+  }
+}

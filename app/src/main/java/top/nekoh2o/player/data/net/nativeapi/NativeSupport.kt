@@ -1,14 +1,9 @@
 package top.nekoh2o.player.data.net.nativeapi
 
-import android.graphics.Bitmap
-import android.util.Base64
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.MultiFormatWriter
 import kotlinx.serialization.json.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
-import java.io.ByteArrayOutputStream
 import java.math.BigInteger
 import java.security.KeyFactory
 import java.security.MessageDigest
@@ -31,13 +26,7 @@ internal fun parameters(request: Request): Map<String, String> = buildMap {
 internal fun jsonResponse(request: Request, body: JsonObject, code: Int = 200): Response = Response.Builder()
     .request(request).protocol(Protocol.HTTP_1_1).code(code).message("Native provider")
     .header("Content-Type", "application/json").body(body.toString().toResponseBody("application/json".toMediaType())).build()
-internal fun qrImage(url: String): String {
-    val matrix = MultiFormatWriter().encode(url, BarcodeFormat.QR_CODE, 320, 320)
-    val pixels = IntArray(320 * 320) { i -> if (matrix[i % 320, i / 320]) 0xff000000.toInt() else -1 }
-    val bitmap = Bitmap.createBitmap(pixels, 320, 320, Bitmap.Config.ARGB_8888)
-    return try { val bytes = ByteArrayOutputStream(); bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
-        "data:image/png;base64," + Crypto.b64(bytes.toByteArray()) } finally { bitmap.recycle() }
-}
+internal fun qrImage(url: String): String = NativePlatform.qrImage(url)
 internal object Crypto {
     private val random = SecureRandom()
     fun randomHex(bytes: Int) = ByteArray(bytes).also(random::nextBytes).let(::hex)
@@ -45,8 +34,8 @@ internal object Crypto {
     fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it.toInt() and 255) }
     fun unhex(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     fun md5(value: String) = hex(MessageDigest.getInstance("MD5").digest(value.toByteArray()))
-    fun b64(value: ByteArray): String = Base64.encodeToString(value, Base64.NO_WRAP)
-    fun unb64(value: String): ByteArray = Base64.decode(value, Base64.DEFAULT)
+    fun b64(value: ByteArray): String = NativePlatform.base64(value)
+    fun unb64(value: String): ByteArray = NativePlatform.unbase64(value)
     fun aes(data: ByteArray, key: String, iv: String? = null, decrypt: Boolean = false): ByteArray {
         val cipher = Cipher.getInstance(if (iv == null) "AES/ECB/PKCS5Padding" else "AES/CBC/PKCS5Padding")
         val spec = SecretKeySpec(key.toByteArray(), "AES")

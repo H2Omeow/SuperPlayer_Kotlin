@@ -2,7 +2,7 @@ gradle.properties
 gradle/
 .gradle/
 build/
-kotlin/
+/kotlin/
 idea/
 *.iml
 local.properties
@@ -15,3 +15,7 @@ nano.*.save
 app/.cxx/
 
 .kotlin/
+
+/desktop/build/
+/desktop/.gradle/
+/desktop/packaging/__pycache__/

@@ -16,14 +16,14 @@ class KugouSessionStoreTest {
     private lateinit var sessions: KugouSessionStore
     @Before fun setup() {
         prefs.edit().clear().commit()
-        sessions = KugouSessionStore(prefs)
+        sessions = KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs))
         sessions.merge(0, mapOf("token" to "old", "userid" to "1", "vip_token" to "old-vip", "dfid" to "device0", "KUGOU_API_MID" to "mid0"))
         sessions.merge(1, mapOf("token" to "lite", "userid" to "2", "dfid" to "device1"))
     }
 
     @Test fun importPersistsCredentialsAndRetainsDeviceWithoutLeakingOtherCookies() {
         sessions.importCookie(0, "Cookie: token=updated==; userid=123; Path=/; sp.sid=site-secret; MUSIC_U=netease-secret")
-        val restored = KugouSessionStore(prefs)
+        val restored = KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs))
         assertEquals("updated==", restored.value(0, "token"))
         assertEquals("123", restored.value(0, "userid"))
         assertEquals("device0", restored.value(0, "dfid"))
@@ -55,7 +55,7 @@ class KugouSessionStoreTest {
 
     @Test fun clearRemovesSelectedDeviceAndLoginAndSurvivesRestart() {
         sessions.clearCookie(1)
-        val restored = KugouSessionStore(prefs)
+        val restored = KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs))
         assertEquals("", restored.cookie(1))
         assertEquals("old", restored.value(0, "token"))
         assertEquals("device0", restored.value(0, "dfid"))

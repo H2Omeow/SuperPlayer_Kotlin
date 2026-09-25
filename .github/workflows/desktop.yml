@@ -1,0 +1,139 @@
+name: Desktop
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  kotlin:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: cmake -S desktop/native -B desktop/build/native -DCMAKE_BUILD_TYPE=Release && cmake --build desktop/build/native -j2
+      - run: ./gradlew -p desktop test installDist --no-daemon --max-workers=2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-jars
+          path: desktop/build/install/NekoPlayer-desktop/lib
+  package:
+    needs: kotlin
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux-x64, linux-x86, linux-arm64, linux-armv7, windows-x64, windows-x86, windows-arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-jars
+          path: desktop/build/install/NekoPlayer-desktop/lib
+      - name: Install compiler
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          case "$TARGET" in
+            linux-x86) sudo apt-get update && sudo apt-get install -y g++-multilib ;;
+            linux-arm64) sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu ;;
+            linux-armv7) sudo apt-get update && sudo apt-get install -y g++-arm-linux-gnueabihf ;;
+          esac
+      - name: Build native components and archive
+        env:
+          TARGET: ${{ matrix.target }}
+        run: python3 desktop/packaging/build.py "$TARGET"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: desktop/build/dist/*
+          compression-level: 0
+  smoke:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: linux-x64, runner: ubuntu-22.04}
+          - {target: linux-x86, runner: ubuntu-22.04}
+          - {target: linux-arm64, runner: ubuntu-24.04-arm}
+          - {target: linux-armv7, runner: ubuntu-22.04}
+          - {target: windows-x64, runner: windows-2022}
+          - {target: windows-x86, runner: windows-2022}
+          - {target: windows-arm64, runner: windows-11-arm}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: artifacts
+      - name: Run packaged decoder and JNI on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem artifacts/NekoPlayer-*.zip | Select-Object -First 1
+          Expand-Archive $archive.FullName -DestinationPath smoke
+          $app = (Get-ChildItem smoke -Directory | Select-Object -First 1).FullName
+          & "$app/runtime/bin/java.exe" "-Dnekoplayer.home=$app" "-Djava.library.path=$app/native" -cp "$app/lib/*" top.nekoh2o.player.desktop.MainKt --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run packaged decoder and JNI on Linux
+        if: runner.os == 'Linux'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir smoke
+          tar xf artifacts/NekoPlayer-*.tar.gz -C smoke
+          app=$(find smoke -mindepth 1 -maxdepth 1 -type d)
+          case "$TARGET" in
+            linux-x86) sudo apt-get update && sudo apt-get install -y libc6-i386 lib32stdc++6 ;;
+            linux-armv7)
+              sudo apt-get update && sudo apt-get install -y qemu-user-static binfmt-support gcc-arm-linux-gnueabihf
+              export QEMU_LD_PREFIX=/usr/arm-linux-gnueabihf
+              export JAVA_TOOL_OPTIONS=-Xint
+              ;;
+          esac
+          "$app/NekoPlayer" --self-test
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: smoke
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: artifacts
+      - name: Collect verified packages
+        run: |
+          mkdir release
+          find artifacts -type f \( -name 'NekoPlayer-*.zip' -o -name 'NekoPlayer-*.tar.gz' -o -name 'ffmpeg-8.1.2.tar.xz' \) -exec cp -t release {} +
+          cd release
+          sha256sum * > desktop-SHA256SUMS.txt
+      - name: Attach to release after APK publisher
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          for attempt in $(seq 1 60); do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" release/* --clobber
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Release not available; refusing to create an incomplete release."
+          exit 1

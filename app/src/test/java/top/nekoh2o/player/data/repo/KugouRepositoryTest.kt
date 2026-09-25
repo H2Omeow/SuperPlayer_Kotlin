@@ -38,7 +38,7 @@ class KugouRepositoryTest {
     @Before fun setup() {
         val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("kg_test", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
-        sessions = KugouSessionStore(prefs)
+        sessions = KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs))
         server = MockWebServer().also { it.start() }
         val client = OkHttpClient.Builder().cookieJar(CookieJar.NO_COOKIES)
             .readTimeout(2, TimeUnit.SECONDS).addInterceptor(KugouInterceptor(sessions)).build()
@@ -148,7 +148,7 @@ class KugouRepositoryTest {
         sessions.migrate(0, "old", "1", "device-zero")
         sessions.merge(1, mapOf("token" to "lite", "userid" to "2", "dfid" to "device-one"))
         sessions.clearLogin(0)
-        val restored = KugouSessionStore(prefs)
+        val restored = KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs))
         restored.migrate(0, "old", "1", "old-dfid")
         assertEquals("", restored.value(0, "token"))
         assertEquals("device-zero", restored.value(0, "dfid"))

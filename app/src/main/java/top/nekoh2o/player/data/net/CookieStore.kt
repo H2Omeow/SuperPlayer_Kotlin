@@ -58,7 +58,7 @@ object CookieStore {
             level = prefs[KEY_LEVEL] ?: "exhigh"
 
 
-            kgSessions = KugouSessionStore(appContext.getSharedPreferences("kugou_sessions", Context.MODE_PRIVATE))
+            kgSessions = KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(appContext.getSharedPreferences("kugou_sessions", Context.MODE_PRIVATE)))
             kgSessions.migrate(kgPlatformValue(), prefs[KEY_KG_TOKEN].orEmpty(), prefs[KEY_KG_USERID].orEmpty(), prefs[KEY_KG_DFID].orEmpty())
             ready.complete(Unit)
         }

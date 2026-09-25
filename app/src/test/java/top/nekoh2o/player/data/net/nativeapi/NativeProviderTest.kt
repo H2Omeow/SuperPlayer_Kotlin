@@ -37,7 +37,7 @@ class NativeProviderTest {
     }
     @Test fun directNeteaseRemovesProxyCredentialsAndEncodesCommentBody() {
         val prefs=RuntimeEnvironment.getApplication().getSharedPreferences("native_nc_test",Context.MODE_PRIVATE)
-        val client=OkHttpClient.Builder().cookieJar(CookieJar.NO_COOKIES).addInterceptor(NeteaseNativeInterceptor(prefs))
+        val client=OkHttpClient.Builder().cookieJar(CookieJar.NO_COOKIES).addInterceptor(NeteaseNativeInterceptor(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs)))
             .addInterceptor { chain ->
                 val request=chain.request()
                 assertEquals("music.163.com",request.url.host)
@@ -52,7 +52,7 @@ class NativeProviderTest {
     }
     @Test fun directKugouUsesCorrectPlatformAndNeverSendsSiteCredentials() {
         val prefs=RuntimeEnvironment.getApplication().getSharedPreferences("native_kg_test",Context.MODE_PRIVATE);prefs.edit().clear().commit()
-        val sessions=KugouSessionStore(prefs)
+        val sessions=KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs))
         val hosts=mutableListOf<String>()
         val client=OkHttpClient.Builder().cookieJar(CookieJar.NO_COOKIES).addInterceptor(KugouNativeInterceptor(sessions))
             .addInterceptor { chain ->
@@ -68,7 +68,7 @@ class NativeProviderTest {
     }
     @Test fun kugouNestedRepliesKeepThreadAndParentSeparate() {
         val prefs=RuntimeEnvironment.getApplication().getSharedPreferences("native_kg_reply",Context.MODE_PRIVATE)
-        prefs.edit().clear().commit();val sessions=KugouSessionStore(prefs)
+        prefs.edit().clear().commit();val sessions=KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs))
         val client=OkHttpClient.Builder().addInterceptor(KugouNativeInterceptor(sessions)).addInterceptor { chain ->
             val r=chain.request();assertEquals("commentsv2/reply",r.url.queryParameter("r"))
             assertEquals("111",r.url.queryParameter("tid"));assertEquals("222",r.url.queryParameter("pid"));assertEquals("0",r.url.queryParameter("is_t"))
@@ -82,7 +82,7 @@ class NativeProviderTest {
     @Test fun smsAndTokenLoginUseCertificateValidHostForBothPlatforms() {
         val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("native_kg_login_host", Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
-        val sessions = KugouSessionStore(prefs)
+        val sessions = KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs))
         for (platform in 0..1) {
             val client = OkHttpClient.Builder().addInterceptor(KugouNativeInterceptor(sessions))
                 .addInterceptor { chain ->
@@ -119,7 +119,7 @@ class NativeProviderTest {
         org.junit.Assume.assumeTrue(System.getenv("KUGOU_LOGIN_SMOKE") == "1")
         val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("native_kg_sms_smoke", Context.MODE_PRIVATE)
         val client = OkHttpClient.Builder().followRedirects(false).callTimeout(20, TimeUnit.SECONDS)
-            .addInterceptor(KugouNativeInterceptor(KugouSessionStore(prefs))).build()
+            .addInterceptor(KugouNativeInterceptor(KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs)))).build()
         for (platform in 0..1) {
             val request = Request.Builder().url("https://native.invalid/kgapi/captcha/sent?platform=" + platform)
                 .post(FormBody.Builder().add("mobile", "invalid").build()).build()
@@ -133,7 +133,7 @@ class NativeProviderTest {
     }
     @Test fun publicKugouSearchOmitsCredentialsAndPreservesChineseKeywords() {
         val prefs=RuntimeEnvironment.getApplication().getSharedPreferences("native_kg_search",Context.MODE_PRIVATE)
-        prefs.edit().clear().commit();val sessions=KugouSessionStore(prefs)
+        prefs.edit().clear().commit();val sessions=KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(prefs))
         sessions.merge(1,mapOf("userid" to "123","token" to "private-token","dfid" to "private-device"))
         val client=OkHttpClient.Builder().addInterceptor(KugouNativeInterceptor(sessions)).addInterceptor { chain ->
             val r=chain.request();assertEquals("songsearch.kugou.com",r.url.host)
@@ -153,7 +153,7 @@ class NativeProviderTest {
         org.junit.Assume.assumeTrue(System.getenv("NATIVE_API_SMOKE")=="1")
         val context=RuntimeEnvironment.getApplication()
         val nc=OkHttpClient.Builder().callTimeout(30,TimeUnit.SECONDS)
-            .addInterceptor(NeteaseNativeInterceptor(context.getSharedPreferences("native_nc_smoke",Context.MODE_PRIVATE))).build()
+            .addInterceptor(NeteaseNativeInterceptor(top.nekoh2o.player.data.net.AndroidProviderPreferences(context.getSharedPreferences("native_nc_smoke",Context.MODE_PRIVATE)))).build()
         fun read(client: OkHttpClient, path: String): JsonObject = client.newCall(Request.Builder().url("https://native.invalid/"+path).build()).execute().use {
             assertTrue("HTTP "+it.code,it.isSuccessful);Json.parseToJsonElement(it.body!!.string()).jsonObject
         }
@@ -163,7 +163,7 @@ class NativeProviderTest {
                 println("NETEASE_UPSTREAM_LIMIT register/anonimous code=400 (also reproduced with upstream Node module)")
             } else { assertEquals(endpoint,"200",result.text("code"));println("NETEASE_OK "+endpoint.substringBefore('?')) }
         }
-        val sessions=KugouSessionStore(context.getSharedPreferences("native_kg_smoke",Context.MODE_PRIVATE))
+        val sessions=KugouSessionStore(top.nekoh2o.player.data.net.AndroidProviderPreferences(context.getSharedPreferences("native_kg_smoke",Context.MODE_PRIVATE)))
         val kg=OkHttpClient.Builder().callTimeout(30,TimeUnit.SECONDS).addInterceptor(KugouInterceptor(sessions)).addInterceptor(KugouNativeInterceptor(sessions)).build()
         for(platform in 0..1) {
             for(endpoint in listOf("register/dev","login/qr/key","search?keywords=梁博&pagesize=1","privilege/lite?hash=043C4DA61870CD55C1240F0FA6744C94","comment/music?mixsongid=302362878&pagesize=1","privilege/lite?hash=043C4DA61870CD55C1240F0FA6744C94&behavior=download","song/url?hash=043C4DA61870CD55C1240F0FA6744C94&quality=128&behavior=download")) {

@@ -179,7 +179,7 @@ class KugouRepository(
         val candidate = candidates.firstOrNull { it.text("id").isNotBlank() && it.text("accesskey").isNotBlank() } ?: return@optional null
         val result = get("lyric", mapOf("id" to candidate.text("id"), "accesskey" to candidate.text("accesskey"), "fmt" to "lrc", "decode" to "true"))
         result.text("decodeContent").ifBlank {
-            result.text("content").takeIf(String::isNotBlank)?.let { String(android.util.Base64.decode(it, android.util.Base64.DEFAULT), Charsets.UTF_8) }.orEmpty()
+            result.text("content").takeIf(String::isNotBlank)?.let { String(top.nekoh2o.player.data.net.nativeapi.NativePlatform.unbase64(it), Charsets.UTF_8) }.orEmpty()
         }.takeIf(String::isNotBlank)
     }
 
