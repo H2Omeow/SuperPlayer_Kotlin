@@ -102,6 +102,13 @@ jobs:
               sudo apt-get update && sudo apt-get install -y qemu-user-static binfmt-support gcc-arm-linux-gnueabihf
               export QEMU_LD_PREFIX=/usr/arm-linux-gnueabihf
               export JAVA_TOOL_OPTIONS=-Xint
+              # Hosted Ubuntu runners do not always register binfmt handlers for
+              # newly installed ARMv7 interpreters. Invoke QEMU explicitly so
+              # this check exercises the packaged JVM, FFmpeg and JNI library.
+              qemu-arm-static -L "$QEMU_LD_PREFIX" "$app/runtime/bin/java" \
+                "-Dnekoplayer.home=$app" "-Djava.library.path=$app/native" \
+                -cp "$app/lib/*" top.nekoh2o.player.desktop.MainKt --self-test
+              exit $?
               ;;
           esac
           "$app/NekoPlayer" --self-test
