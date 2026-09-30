@@ -21,6 +21,14 @@ class SongQualityRepository internal constructor(
     private suspend fun candidates(song: Song, download: Boolean): List<AudioQuality> {
         discovery?.let { return it(song, download) }
         CookieStore.awaitReady();ApiFactory.awaitReady()
+        if (song.source.startsWith("animemusic-")) {
+            return listOf(
+                AudioQuality("128k", "标准 128k", 0),
+                AudioQuality("320k", "高品质 320k", 2),
+                AudioQuality("flac", "无损 FLAC", 3),
+                AudioQuality("hires", "Hi-Res", 4)
+            )
+        }
         if(song.source=="kugou") {
             require(song.hash.matches(Regex("[a-fA-F0-9]{32}"))) { "歌曲缺少酷狗 hash，请重新搜索该歌曲" }
             KugouRepository().ensureInitialized()
@@ -65,10 +73,17 @@ class SongQualityRepository internal constructor(
         if(e.errorCode in setOf(20018,20028)) throw e
         null
     }
-      catch(e: retrofit2.HttpException) { if(e.code() in listOf(401,403,404)) null else throw e }
+      catch(e: retrofit2.HttpException) {
+          if (song.source.startsWith("animemusic-") && e.code() in listOf(401,403,429)) throw e
+          if(e.code() in listOf(401,403,404)) null else throw e
+      }
 
     private suspend fun probe(song: Song, choice: AudioQuality, download: Boolean): ResolvedAudio? {
         urlResolver?.let { return it(song, choice, download) }
+        if (song.source.startsWith("animemusic-")) {
+            val url = AnimemusicRepository().resolveUrl(song, choice.id) ?: return null
+            return ResolvedAudio(choice, url)
+        }
         if(song.source=="kugou") {
             val body=ApiFactory.kugou.get("song/url",CookieStore.kgPlatformValue(),mapOf(
                 "hash" to choice.hash.ifBlank { song.hash },"album_id" to song.albumId.ifBlank { "0" },
@@ -93,7 +108,9 @@ class SongQualityRepository internal constructor(
         internal val kgLabels=linkedMapOf("128" to ("标准 128k" to 0),"320" to ("高品质 320k" to 2),"flac" to ("无损 FLAC" to 3),
             "high" to ("Hi-Res" to 4),"viper_atmos" to ("全景声" to 5),"viper_tape" to ("蝰蛇磁带" to 5),
             "viper_clear" to ("蝰蛇超清" to 6),"super" to ("超清母带" to 7))
-        internal fun preferredFor(source: String, preferred: String): String = if(source!="kugou") preferred else mapOf(
+        internal fun preferredFor(source: String, preferred: String): String = if (source.startsWith("animemusic-")) mapOf(
+            "standard" to "128k", "higher" to "320k", "exhigh" to "320k", "lossless" to "flac", "hires" to "hires"
+        )[preferred] ?: preferred else if(source!="kugou") preferred else mapOf(
             "standard" to "128","higher" to "320","exhigh" to "320","lossless" to "flac","hires" to "high",
             "jyeffect" to "viper_clear","sky" to "viper_atmos","jymaster" to "super","dolby" to "viper_atmos")[preferred]?:preferred
         internal fun neteaseCandidates(body: JsonObject): List<AudioQuality> {

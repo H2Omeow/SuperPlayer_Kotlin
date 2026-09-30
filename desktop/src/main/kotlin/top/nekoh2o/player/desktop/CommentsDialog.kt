@@ -6,7 +6,7 @@ import top.nekoh2o.player.data.repo.*
 import java.awt.*
 import javax.swing.*
 
-internal class CommentsDialog(owner: JFrame, private val original: Song) : AsyncDialog(owner, "歌曲评论 · " + original.nm) {
+internal class CommentsDialog(owner: Frame, private val original: Song) : AsyncDialog(owner, "歌曲评论 · " + original.nm) {
     private val repository = CommentsRepository()
     private val provider = JComboBox(arrayOf("网易云", "酷狗", "本站"))
     private val model = DefaultListModel<SongComment>()

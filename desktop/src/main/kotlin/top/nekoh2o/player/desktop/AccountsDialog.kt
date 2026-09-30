@@ -12,7 +12,7 @@ import java.util.Base64
 import javax.swing.*
 import com.sun.net.httpserver.HttpServer
 
-internal open class AsyncDialog(owner: JFrame, title: String) : JDialog(owner, title, false) {
+internal open class AsyncDialog(owner: Frame, title: String) : JDialog(owner, title, false) {
     protected val scope = CoroutineScope(SupervisorJob() + Dispatchers.Swing)
     protected val status = JLabel(" ")
     init {
@@ -26,7 +26,7 @@ internal open class AsyncDialog(owner: JFrame, title: String) : JDialog(owner, t
     }
 }
 
-internal class AccountsDialog(owner: JFrame, private val onSiteLogin: () -> Unit = {}) : AsyncDialog(owner, "账号与 Cookie") {
+internal class AccountsDialog(owner: Frame, private val onSiteLogin: () -> Unit = {}) : AsyncDialog(owner, "账号与 Cookie") {
     private val platform = JComboBox(arrayOf("酷狗原版", "酷狗概念版"))
     private val phone = JTextField(16)
     private val code = JTextField(8)

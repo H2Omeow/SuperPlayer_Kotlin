@@ -15,5 +15,5 @@ class Library(private val preferences: FilePreferences = DesktopPaths.preference
     fun addPlaylist(name: String) { require(name.isNotBlank()); data = data.copy(playlists = data.playlists + Playlist(java.util.UUID.randomUUID().toString(), name.trim())); save() }
     fun addToPlaylist(id: String, song: Song) { data = data.copy(playlists = data.playlists.map { if (it.id == id) it.copy(songs = (it.songs + song).distinctBy(::key).toMutableList()) else it }); save() }
     private fun save() = preferences.edit().putString("library", json.encodeToString(data)).apply()
-    companion object { fun key(song: Song) = if (song.source == "kugou") "kg:" + song.hash else if (song.source == "local") "file:" + song.hash else "nc:" + song.id }
+    companion object { fun key(song: Song) = song.source + ":" + song.providerMediaId.ifBlank { song.hash.ifBlank { song.id.toString() } } }
 }

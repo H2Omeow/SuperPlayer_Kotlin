@@ -38,7 +38,7 @@ class LocalStore(context: Context) {
 
     // ---------- 历史 ----------
     fun addHistory(song: Song) {
-        history.removeAll { it.id == song.id }
+        history.removeAll { it.id == song.id && it.source == song.source && it.hash == song.hash }
         history.add(0, song)
         while (history.size > 100) history.removeAt(history.size - 1)
         saveHistory()
@@ -48,7 +48,7 @@ class LocalStore(context: Context) {
     // ---------- 收藏 ----------
     fun isFav(id: Long) = favorites.any { it.id == id }
     fun toggleFav(song: Song): Boolean {
-        val idx = favorites.indexOfFirst { it.id == song.id }
+        val idx = favorites.indexOfFirst { it.id == song.id && it.source == song.source && it.hash == song.hash }
         val nowFav: Boolean
         if (idx >= 0) { favorites.removeAt(idx); nowFav = false }
         else { favorites.add(song); nowFav = true }
@@ -69,7 +69,7 @@ class LocalStore(context: Context) {
     }
     fun addToPlaylist(index: Int, song: Song): Boolean {
         val pl = playlists.getOrNull(index) ?: return false
-        if (pl.songs.any { it.id == song.id }) return false
+        if (pl.songs.any { it.id == song.id && it.source == song.source && it.hash == song.hash }) return false
         pl.songs.add(song); savePlaylists(); return true
     }
     fun removeFromPlaylist(plIndex: Int, songIndex: Int) {
@@ -91,11 +91,16 @@ class LocalStore(context: Context) {
         target.clear(); target.addAll(merged)
     }
     private fun mergeById(local: List<Song>, remote: List<Song>): List<Song> {
-        val seen = HashSet<Long>()
+        val seen = HashSet<String>()
         val out = mutableListOf<Song>()
-        remote.forEach { if (seen.add(it.id)) out.add(it) }
-        local.forEach { if (seen.add(it.id)) out.add(it) }
+        remote.forEach { if (seen.add(songKey(it))) out.add(it) }
+        local.forEach { if (seen.add(songKey(it))) out.add(it) }
         return out
+    }
+
+    private fun songKey(song: Song): String = buildString {
+        append(song.source).append(':')
+        append(song.hash.ifBlank { song.providerMediaId.ifBlank { song.id.toString() } })
     }
     private fun mergePlaylists(local: List<Playlist>, remote: List<Playlist>): List<Playlist> {
         val map = LinkedHashMap<String, Playlist>()

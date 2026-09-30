@@ -178,7 +178,7 @@ private fun SongList(
             }
             HorizontalDivider()
         }
-        items(songs, key = { it.id }) { song ->
+        items(songs, key = { it.source + ":" + it.hash.ifBlank { it.id.toString() } }) { song ->
             SongRow(
                 song = song,
                 isFav = vm.isFav(song.id),

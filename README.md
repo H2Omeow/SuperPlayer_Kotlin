@@ -2,10 +2,10 @@
 
 支持 Android、Windows 和 Linux 的音乐播放器，接入网易云与酷狗音乐曲库。
 
-## 桌面版（1.0.9）
+## 桌面版（1.1.0-pre）
 
-- Windows：x64、x86（32 位）、ARM64；Linux：x64、x86、ARM64、ARMv7 hard-float。
-- 独立便携包包含 Java、FFmpeg 和 C++ 音效库；Windows 可直接运行 **NekoPlayer.exe**，支持搜索、播放、音质选择、下载、登录、Cookie、歌词、歌单与评论。
+- Windows x64 提供标准 MSI/EXE 安装包，安装后创建桌面和开始菜单快捷方式；Linux 提供 x64、ARM64 的 DEB/RPM，所有安装包内置 Java 运行时。
+- Compose Desktop 横屏界面复用 Android 播放页结构，支持搜索、播放、音质选择、下载、登录、Cookie、歌词、歌单、评论和 MV。
 - 桌面播放输出为 48 kHz / 16-bit 双声道，下载保留原文件；大文件首次播放需等待完整缓冲。
 - [安装、功能范围与构建说明](desktop/README.md)。下列 Material Design、悬浮歌词、系统音效等设备专属功能指 Android 版本。
 
@@ -142,7 +142,7 @@ KEY_PASSWORD=your_key_password
 ## 隐私说明
 
 - 本应用在用户通过 SSO 账户中心登录后，会将用户的播放记录、收藏、歌单等数据保存到本站服务器
-- **网易云 Cookie 与酷狗原版/概念版登录 Cookie 会加密保存到云端**，用于多端同步；1.0.9 的音乐接口由 App 使用对应凭据直连音乐平台
+- **网易云 Cookie 与酷狗原版/概念版登录 Cookie 会加密保存到云端**，用于多端同步；网易云和酷狗原生接口由 App 使用对应凭据访问，聚合音源统一经本站代理访问
 - 本站不保证数据绝对安全（如服务器遭到入侵等不可控因素）
 - 使用本站的云端同步功能即默认接受上述风险
 - 如不希望数据上传至服务器，请勿登录账户或使用云端同步功能
@@ -195,3 +195,10 @@ resolveUser(req) 必须验证请求的 Bearer JWT 并返回 { user: { id, userna
 - [Jetpack Compose](https://developer.android.com/jetpack/compose)
 - [Media3](https://developer.android.com/guide/topics/media/media3)
 - [Coil](https://coil-kt.github.io/coil/)
+
+## 音源与 MV（1.1.0-pre）
+
+- 音乐页新增独立的 **音源** 分组，可单独切换酷狗、酷我、网易、QQ、咪咕和 B 站，并在歌曲卡片显示来源。
+- 音源地址只保存在本站服务端，客户端不会内置上游接口；必须登录本站账号，所有请求使用短期密钥、随机数和 HMAC 签名。
+- 全站共享每日 10,000 次音乐链接额度；歌词和 MV 不占额度。本站统计页展示今日总量、剩余额度和用户调用次数。
+- 网易云、酷狗和音源均提供 MV 搜索与播放入口。

@@ -56,8 +56,8 @@ def extract(archive):
     return directories[0]
 
 
-def build(target):
-    runtime = extract(download(PINS["runtimes"][target]))
+def build(target, native_only=False):
+    runtime = None if native_only else extract(download(PINS["runtimes"][target]))
     source_archive = download(PINS["ffmpeg"])
     source = extract(source_archive)
     build_dir = DESKTOP / "build" / "native-targets" / target
@@ -72,6 +72,8 @@ def build(target):
         triplet = {"x64": "x86_64", "x86": "i686", "arm64": "aarch64"}[arch] + "-w64-mingw32"
         prefix = str(toolchain / "bin" / (triplet + "-"))
         cc, cxx = prefix + "clang", prefix + "clang++"
+        if not Path(cxx).is_file():
+            raise RuntimeError(f"LLVM-MinGW compiler missing: {cxx}")
         cross = ["--enable-cross-compile", "--target-os=mingw32", "--cross-prefix=" + prefix]
         native = build_dir / "nekoplayer_audio_effects.dll"
         launcher_binary = build_dir / "NekoPlayer.exe"
@@ -108,10 +110,30 @@ def build(target):
         "--enable-encoder=pcm_s16le", "--enable-muxer=pcm_s16le", "--enable-parser=mpegaudio,aac,flac,opus,vorbis",
         "--enable-filter=aresample,aformat,anull,atrim", "--enable-swresample", *cross]
     run(configure, cwd=ffbuild, env=env)
-    run(["make", "-j" + os.environ.get("NEKOPLAYER_JOBS", "2")], cwd=ffbuild, env=env)
+    run(["make", "-j" + os.environ.get("NEKOPLAYER_JOBS", "1")], cwd=ffbuild, env=env)
     ffmpeg = ffbuild / ("ffmpeg.exe" if windows else "ffmpeg")
     if not ffmpeg.is_file():
         raise RuntimeError("FFmpeg binary missing")
+    if native_only:
+        resource_dir = DESKTOP / "build" / "installer-resources" / ("windows" if windows else "linux")
+        native_dir = resource_dir / "native"
+        native_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(native, native_dir / native.name)
+        shutil.copy2(ffmpeg, native_dir / ffmpeg.name)
+        if not windows:
+            (native_dir / ffmpeg.name).chmod(0o755)
+        licenses = resource_dir / "licenses"
+        licenses.mkdir(exist_ok=True)
+        shutil.copy2(source / "COPYING.LGPLv2.1", licenses / "FFmpeg-LGPL-2.1.txt")
+        shutil.copy2(source / "LICENSE.md", licenses / "FFmpeg-LICENSE.md")
+        dist = DESKTOP / "build" / "dist"
+        dist.mkdir(exist_ok=True)
+        shutil.copy2(source_archive, dist / source_archive.name)
+        from verify import verify_machine
+        for binary in (native_dir / native.name, native_dir / ffmpeg.name):
+            verify_machine(binary, arch)
+        print("Prepared installer native resources", target, flush=True)
+        return
     stage = DESKTOP / "build" / "stage" / ("NekoPlayer-1.1.0-pre-" + target)
     shutil.rmtree(stage, ignore_errors=True)
     (stage / "native").mkdir(parents=True)
@@ -167,4 +189,6 @@ def build(target):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("target", choices=list(PINS["runtimes"]))
-    build(parser.parse_args().target)
+    parser.add_argument("--native-only", action="store_true")
+    options = parser.parse_args()
+    build(options.target, options.native_only)

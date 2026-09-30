@@ -22,7 +22,7 @@ internal object DesktopEffects {
     }
 }
 
-internal class EffectsDialog(owner: JFrame, player: DesktopPlayer) : JDialog(owner, "专业音效与母带", false) {
+internal class EffectsDialog(owner: Frame, player: DesktopPlayer) : JDialog(owner, "专业音效与母带", false) {
     init {
         defaultCloseOperation = DISPOSE_ON_CLOSE; size = Dimension(780,630); setLocationRelativeTo(owner)
         val initial = player.effects

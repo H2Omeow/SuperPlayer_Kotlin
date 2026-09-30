@@ -302,7 +302,7 @@ private fun NcLikeSongsTab(
             }
             HorizontalDivider()
             LazyColumn(Modifier.fillMaxSize()) {
-                items(songs, key = { it.id }) { song ->
+                items(songs, key = { it.source + ":" + it.hash.ifBlank { it.id.toString() } }) { song ->
                     SongRow(song) { vm.playNow(song) }
                     HorizontalDivider()
                 }

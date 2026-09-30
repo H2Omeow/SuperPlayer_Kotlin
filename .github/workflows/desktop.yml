@@ -5,30 +5,20 @@ on:
     tags: ['v*']
 permissions:
   contents: read
+env:
+  NEKOPLAYER_JOBS: '1'
+  GRADLE_OPTS: >-
+    -Dorg.gradle.daemon=false
+    -Dorg.gradle.workers.max=1
+    -Dorg.gradle.parallel=false
+    -Dorg.gradle.jvmargs=-Xmx768m -XX:MaxMetaspaceSize=384m -XX:ActiveProcessorCount=1
 jobs:
-  kotlin:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-      - uses: gradle/actions/setup-gradle@v4
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: cmake -S desktop/native -B desktop/build/native -DCMAKE_BUILD_TYPE=Release && cmake --build desktop/build/native -j2
-      - run: ./gradlew -p desktop test installDist --no-daemon --max-workers=2
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-jars
-          path: desktop/build/install/NekoPlayer-desktop/lib
-  package:
-    needs: kotlin
+  native:
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        target: [linux-x64, linux-x86, linux-arm64, linux-armv7, windows-x64, windows-x86, windows-arm64]
+        target: [linux-x64, linux-arm64, windows-x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -38,82 +28,104 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          name: desktop-jars
-          path: desktop/build/install/NekoPlayer-desktop/lib
-      - name: Install compiler
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          case "$TARGET" in
-            linux-x86) sudo apt-get update && sudo apt-get install -y g++-multilib ;;
-            linux-arm64) sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu ;;
-            linux-armv7) sudo apt-get update && sudo apt-get install -y g++-arm-linux-gnueabihf ;;
-          esac
-      - name: Build native components and archive
-        env:
-          TARGET: ${{ matrix.target }}
-        run: python3 desktop/packaging/build.py "$TARGET"
+      - name: Install native compiler
+        if: matrix.target == 'linux-arm64'
+        run: sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu
+      - name: Build native decoder and DSP resources
+        run: python3 desktop/packaging/build.py '${{ matrix.target }}' --native-only
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.target }}
-          path: desktop/build/dist/*
+          name: native-${{ matrix.target }}
+          path: |
+            desktop/build/installer-resources
+            desktop/build/dist/ffmpeg-*.tar.xz
           compression-level: 0
-  smoke:
-    needs: package
+  package:
+    needs: native
     strategy:
       fail-fast: false
       matrix:
         include:
           - {target: linux-x64, runner: ubuntu-22.04}
-          - {target: linux-x86, runner: ubuntu-22.04}
           - {target: linux-arm64, runner: ubuntu-24.04-arm}
-          - {target: linux-armv7, runner: ubuntu-22.04}
           - {target: windows-x64, runner: windows-2022}
-          - {target: windows-x86, runner: windows-2022}
-          - {target: windows-arm64, runner: windows-11-arm}
     runs-on: ${{ matrix.runner }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
       - uses: actions/download-artifact@v4
         with:
-          name: desktop-${{ matrix.target }}
-          path: artifacts
-      - name: Run packaged decoder and JNI on Windows
+          name: native-${{ matrix.target }}
+          path: desktop/build
+      - name: Install Linux package and UI dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fakeroot rpm libasound2 libxrender1 libxtst6 libxi6 libgl1 xvfb
+      - name: Install Windows packaging toolchain
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $archive = Get-ChildItem artifacts/NekoPlayer-*.zip | Select-Object -First 1
-          Expand-Archive $archive.FullName -DestinationPath smoke
-          $app = (Get-ChildItem smoke -Directory | Select-Object -First 1).FullName
-          & "$app/runtime/bin/java.exe" "-Dnekoplayer.home=$app" "-Djava.library.path=$app/native" -cp "$app/lib/*" top.nekoh2o.player.desktop.MainKt --self-test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "$app/NekoPlayer.exe")) { throw 'NekoPlayer.exe is missing' }
-          & "$app/NekoPlayer.exe" --self-test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Run packaged decoder and JNI on Linux
+          choco install wixtoolset --version=3.14.1 -y --no-progress
+          $wixBin = (Get-ChildItem 'C:\Program Files (x86)' -Directory -Filter 'WiX Toolset*' | Sort-Object Name -Descending | Select-Object -First 1).FullName + '\bin'
+          if (-not (Test-Path "$wixBin\candle.exe")) { throw 'WiX 3 compiler is missing' }
+          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Compile and verify desktop regression tests
         if: runner.os == 'Linux'
+        run: ./gradlew -p desktop test --no-daemon --max-workers=1 --no-parallel -Pkotlin.compiler.execution.strategy=in-process
+      - name: Build installers with bundled runtime
+        shell: bash
+        run: ./gradlew -p desktop packageDistributionForCurrentOS --no-daemon --max-workers=1 --no-parallel -Pkotlin.compiler.execution.strategy=in-process
+      - name: Verify packaged decoder and DSP on Linux
+        if: runner.os == 'Linux'
+        run: |
+          app=desktop/build/compose/binaries/main/app/NekoPlayer
+          "$app/bin/NekoPlayer" --self-test
+      - name: Install MSI and verify shortcuts, launcher and bundled runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $msi = (Get-ChildItem desktop/build/compose/binaries/main/msi/*.msi | Select-Object -First 1).FullName
+          $process = Start-Process msiexec.exe -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart', '/L*v', "$env:RUNNER_TEMP\nekoplayer-install.log") -Wait -PassThru
+          if ($process.ExitCode -notin @(0, 3010)) { Get-Content "$env:RUNNER_TEMP\nekoplayer-install.log" -Tail 80; throw "MSI install failed: $($process.ExitCode)" }
+          $roots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)})
+          $exe = $roots | ForEach-Object { Get-ChildItem $_ -Filter NekoPlayer.exe -Recurse -ErrorAction SilentlyContinue } | Select-Object -First 1
+          if (-not $exe) { throw 'Installed application launcher is missing' }
+          $selfTest = Start-Process $exe.FullName -ArgumentList '--self-test' -Wait -PassThru
+          if ($selfTest.ExitCode -ne 0) { throw 'Installed native self-test failed' }
+          $shortcut = Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Filter '*NekoPlayer*.lnk' -ErrorAction SilentlyContinue
+          if (-not $shortcut) { throw 'Desktop shortcut was not created' }
+          $menu = Get-ChildItem ([Environment]::GetFolderPath('Programs')) -Filter '*NekoPlayer*.lnk' -Recurse -ErrorAction SilentlyContinue
+          if (-not $menu) { throw 'Start menu shortcut was not created' }
+      - name: Collect installers
         env:
           TARGET: ${{ matrix.target }}
+        shell: bash
         run: |
-          mkdir smoke
-          tar xf artifacts/NekoPlayer-*.tar.gz -C smoke
-          app=$(find smoke -mindepth 1 -maxdepth 1 -type d)
-          case "$TARGET" in
-            linux-x86) sudo apt-get update && sudo apt-get install -y libc6-i386 lib32stdc++6 ;;
-            linux-armv7)
-              # The hosted x86 runner cannot reliably execute a bundled ARMv7
-              # JVM under its binfmt policy. Verify the package's real ELF
-              # machine IDs here; ARMv7 runtime playback remains a device check.
-              file "$app/runtime/bin/java" "$app/native/ffmpeg" "$app/native/libnekoplayer_audio_effects.so"
-              readelf -h "$app/runtime/bin/java" "$app/native/ffmpeg" "$app/native/libnekoplayer_audio_effects.so" | grep -E 'Class:|Machine:'
-              exit 0
-              ;;
-          esac
-          "$app/NekoPlayer" --self-test
+          python - <<'PY'
+          from pathlib import Path
+          import os, shutil
+          destination = Path('desktop/build/publish')
+          destination.mkdir(parents=True, exist_ok=True)
+          installers = [path for path in Path('desktop/build/compose/binaries/main').rglob('*') if path.suffix in ('.msi', '.exe', '.deb', '.rpm') and path.parent.name in ('msi', 'exe', 'deb', 'rpm')]
+          assert len(installers) == 2, f'Expected two installers, found {installers}'
+          version = os.environ.get('GITHUB_REF_NAME', '1.1.0-pre')
+          if not version.startswith('v'): version = 'v1.1.0-pre'
+          for installer in installers:
+              shutil.copy2(installer, destination / f'NekoPlayer-{version}-{os.environ["TARGET"]}{installer.suffix}')
+          for source in Path('desktop/build/dist').glob('ffmpeg-*.tar.xz'):
+              shutil.copy2(source, destination / source.name)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: desktop/build/publish/*
+          compression-level: 0
   publish:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: smoke
+    needs: package
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -122,25 +134,17 @@ jobs:
         with:
           pattern: desktop-*
           path: artifacts
-      - name: Collect verified packages
+          merge-multiple: true
+      - name: Verify release installers and checksums
         run: |
-          mkdir release
           python3 - <<'PY'
           from pathlib import Path
-          import shutil
-          root = Path('artifacts')
-          destination = Path('release')
-          packages = [p for p in root.rglob('*') if p.is_file() and (p.name.endswith('.zip') or p.name.endswith('.tar.gz')) and p.name.startswith('NekoPlayer-')]
-          assert len(packages) == 7, f'Expected 7 desktop archives, found {len(packages)}: {packages}'
-          for package in packages:
-              shutil.copy2(package, destination / package.name)
-          source = next((p for p in root.rglob('ffmpeg-8.1.2.tar.xz') if p.is_file()), None)
-          assert source is not None, 'FFmpeg source archive missing'
-          shutil.copy2(source, destination / source.name)
+          files = [path for path in Path('artifacts').iterdir() if path.suffix in ('.msi', '.exe', '.deb', '.rpm')]
+          assert len(files) == 6, f'Expected 6 installers, found {files}'
           PY
-          cd release
+          cd artifacts
           sha256sum * > desktop-SHA256SUMS.txt
-      - name: Attach to release after APK publisher
+      - name: Upload verified installers to release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -148,10 +152,10 @@ jobs:
         run: |
           for attempt in $(seq 1 60); do
             if gh release view "$TAG" >/dev/null 2>&1; then
-              gh release upload "$TAG" release/* --clobber
+              gh release upload "$TAG" artifacts/* --clobber
               exit 0
             fi
             sleep 10
           done
-          echo "Release not available; refusing to create an incomplete release."
+          echo 'APK Release was not published; refusing to publish an incomplete release.'
           exit 1

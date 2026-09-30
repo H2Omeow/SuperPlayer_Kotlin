@@ -53,7 +53,7 @@ object DownloadIndex {
             json.decodeFromString<List<DownloadedSongSurrogate>>(raw).forEach { s ->
                 val entry = DownloadedSong(
                     songId = s.songId,
-                    song = Song(s.songId, s.nm, s.ar, s.pc, s.source, s.hash, s.albumId, s.albumAudioId),
+                    song = Song(s.songId, s.nm, s.ar, s.pc, s.source, s.hash, s.albumId, s.albumAudioId, s.providerSource, s.providerMediaId),
                     audioUri = s.audioUri,
                     lrcPath = s.lrcPath,
                     quality = s.quality,
@@ -75,7 +75,8 @@ object DownloadIndex {
                 lrcPath = e.lrcPath,
                 quality = e.quality,
                 downloadedAt = e.downloadedAt,
-                source = e.song.source, hash = e.song.hash, albumId = e.song.albumId, albumAudioId = e.song.albumAudioId
+                source = e.song.source, hash = e.song.hash, albumId = e.song.albumId, albumAudioId = e.song.albumAudioId,
+                providerSource = e.song.providerSource, providerMediaId = e.song.providerMediaId
             )
         }
         prefs.edit().putString("entries", json.encodeToString(list)).apply()
@@ -95,6 +96,8 @@ object DownloadIndex {
         val source: String = "netease",
         val hash: String = "",
         val albumId: String = "",
-        val albumAudioId: Long = 0L
+        val albumAudioId: Long = 0L,
+        val providerSource: String = "",
+        val providerMediaId: String = ""
     )
 }

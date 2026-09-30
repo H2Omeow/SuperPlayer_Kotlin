@@ -95,7 +95,7 @@ data class UiState(
     val ncCookie: String = "",
     // 网易云账号信息
     val ncAccount: NcAccountState = NcAccountState(),
-    // 音乐源切换：netease | kugou
+    // 音乐源切换：netease | kugou | animemusic-*
     val musicSource: String = "netease",
     // 酷狗账号信息
     val kgAccount: KgAccountState = KgAccountState()
@@ -317,6 +317,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * 切换音乐源（网易云/酷狗）
      */
     fun switchMusicSource(source: String) {
+        if (source.startsWith("animemusic-") && CookieStore.appTokenValue().isBlank()) {
+            toast("请先在我的页面登录本站账号，再使用惜缘惜梦音源")
+            return
+        }
         _ui.value = _ui.value.copy(
             musicSource = source,
             results = emptyList(),
@@ -325,7 +329,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             recSongs = emptyList(),
             recPlaylists = emptyList()
         )
-        toast("已切换到${if (source == "netease") "网易云音乐" else "酷狗音乐"}")
+        toast("已切换到${when {
+            source == "netease" -> "网易云音乐"
+            source == "kugou" -> "酷狗音乐"
+            source.startsWith("animemusic-") -> "惜缘惜梦音源 · ${top.nekoh2o.player.data.repo.AnimemusicRepository.label(source.removePrefix("animemusic-"))}"
+            else -> source
+        }}")
         loadRecommend()
     }
 
@@ -662,7 +671,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         pushMineToState()
         toast(if (nowFav) "已收藏" else "已取消收藏")
     }
-    fun isFav(id: Long) = libraryVm.isFavorite(id)
+    fun isFav(song: Song) = libraryVm.isFavorite(song)
+    fun isFav(id: Long) = _ui.value.favorites.any { it.id == id }
 
     fun createPlaylist(name: String) {
         libraryVm.createPlaylist(name)

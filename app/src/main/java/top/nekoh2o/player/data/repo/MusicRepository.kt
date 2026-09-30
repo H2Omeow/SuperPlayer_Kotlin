@@ -107,7 +107,7 @@ class MusicRepository {
         return when (song.source) {
             "kugou" -> lyricKugou(song)
             "netease" -> lyric(song.id)
-            else -> lyric(song.id)
+            else -> if (song.source.startsWith("animemusic-")) AnimemusicRepository().lyric(song) else lyric(song.id)
         }
     }
 

@@ -25,8 +25,8 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * 检查是否已收藏
      */
-    fun isFavorite(songId: Long): Boolean {
-        return local.isFav(songId)
+    fun isFavorite(song: Song): Boolean {
+        return local.favorites.any { key(it) == key(song) }
     }
 
     /**
@@ -96,4 +96,6 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun syncNeteaseRecordToLocal(songs: List<Song>) {
         songs.forEach { local.addHistory(it) }
     }
+
+    private fun key(song: Song): String = song.source + ":" + song.hash.ifBlank { song.id.toString() }
 }

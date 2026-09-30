@@ -102,7 +102,7 @@ private class SoundOutput : PcmOutput {
 internal object Decoder {
     fun executable(): String {
         System.getProperty("nekoplayer.ffmpeg")?.let { return it }
-        val root = Paths.get(System.getProperty("nekoplayer.home", "."))
+        val root = Paths.get(System.getProperty("compose.application.resources.dir") ?: System.getProperty("nekoplayer.home", "."))
         val name = if (System.getProperty("os.name").startsWith("Windows")) "ffmpeg.exe" else "ffmpeg"
         return root.resolve("native").resolve(name).takeIf { Files.isRegularFile(it) }?.toAbsolutePath()?.toString() ?: name
     }

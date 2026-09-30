@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">
+<title>本站音源调用统计</title>
+<style>body{background:#171719;color:#fff;font:16px system-ui;margin:0}main{max-width:850px;margin:60px auto;padding:24px}h1{font-size:30px}p{color:#bbb}button,a{border:0;border-radius:10px;background:#ec4141;color:#fff;padding:12px 20px;text-decoration:none;cursor:pointer}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{text-align:left;padding:16px;border-bottom:1px solid #333}.quota{font-size:28px;margin:24px 0}progress{width:100%;accent-color:#ec4141}</style>
+<main><h1>本站音源调用统计</h1><p>全站共享每日 10,000 次音乐链接额度，北京时间零点重置。歌词与 MV 不占用音乐链接额度。</p>
+<a id="login" href="https://account.nekoh2o.top/login?redirect=https%3A%2F%2Fnekoh2o.top%2Fsource%2F">登录本站查看</a>
+<button id="refresh" hidden>刷新统计</button><div id="status" role="status"></div><div class="quota" id="quota"></div><progress id="bar" value="0" max="10000"></progress>
+<table><thead><tr><th>用户</th><th>今日音乐链接调用</th><th>累计调用</th></tr></thead><tbody id="users"></tbody></table></main>
+<script>
+const params=new URLSearchParams(location.search), token=params.get('token')||sessionStorage.getItem('source.login');
+history.replaceState(null,'',location.pathname);if(token)sessionStorage.setItem('source.login',token);
+const status=document.getElementById('status');let session;
+const hex=bytes=>Array.from(new Uint8Array(bytes),value=>value.toString(16).padStart(2,'0')).join('');
+async function update(){try{
+status.textContent='正在读取…';
+if(!session||session.expires<Date.now()+60000){const response=await fetch('/api/music-source/session',{method:'POST',headers:{Authorization:'Bearer '+token}});session=await response.json();if(!response.ok)throw Error(session.message);}
+const time=String(Date.now()),nonce=crypto.randomUUID().replaceAll('-',''),path='/api/music-source/usage';
+const hash=hex(await crypto.subtle.digest('SHA-256',new Uint8Array()));
+const key=await crypto.subtle.importKey('raw',new Uint8Array(session.key.match(/../g).map(part=>parseInt(part,16))),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+const signature=hex(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(['GET',path,time,nonce,hash].join('\n'))));
+const response=await fetch(path,{headers:{Authorization:'Bearer '+token,'X-Source-Key':session.keyId,'X-Source-Time':time,'X-Source-Nonce':nonce,'X-Source-Signature':signature}});
+const data=await response.json();if(!response.ok)throw Error(data.message);
+document.getElementById('quota').textContent=data.date+' · 已调用 '+data.used+' / '+data.limit+' · 剩余 '+data.remaining;
+document.getElementById('bar').value=data.used;document.getElementById('users').replaceChildren();
+for(const user of data.users){const row=document.createElement('tr');for(const value of [user.name,user.today,user.total]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}document.getElementById('users').append(row);}
+status.textContent=data.remaining===0?'今日额度已用尽，所有用户音乐链接请求均已暂停。':'统计已更新';
+document.getElementById('login').hidden=true;document.getElementById('refresh').hidden=false;
+}catch(error){status.textContent=error.message||'读取失败，请重新登录';session=null;}}
+document.getElementById('refresh').onclick=update;if(token)update();
+</script>
+</html>

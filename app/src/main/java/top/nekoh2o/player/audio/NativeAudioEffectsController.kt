@@ -32,7 +32,11 @@ internal class JniEffectBackend : NativeEffectBackend {
 }
 
 internal object NativeAudioEffectsController {
-    init { System.loadLibrary("nekoplayer_audio_effects") }
+    init {
+        val resources = System.getProperty("compose.application.resources.dir")
+        if (resources != null) System.load(java.io.File(resources, "native/" + System.mapLibraryName("nekoplayer_audio_effects")).absolutePath)
+        else System.loadLibrary("nekoplayer_audio_effects")
+    }
 
     external fun nativeCreate(sampleRate: Int, channelCount: Int): Long
     external fun nativeConfigure(
