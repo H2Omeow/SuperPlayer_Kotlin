@@ -7,11 +7,7 @@ permissions:
   contents: read
 env:
   NEKOPLAYER_JOBS: '1'
-  GRADLE_OPTS: >-
-    -Dorg.gradle.daemon=false
-    -Dorg.gradle.workers.max=1
-    -Dorg.gradle.parallel=false
-    -Dorg.gradle.jvmargs=-Xmx768m -XX:MaxMetaspaceSize=384m -XX:ActiveProcessorCount=1
+  JAVA_TOOL_OPTIONS: '-XX:ActiveProcessorCount=1'
 jobs:
   native:
     runs-on: ubuntu-22.04
@@ -61,23 +57,58 @@ jobs:
         with:
           name: native-${{ matrix.target }}
           path: desktop/build
+      - name: Verify native resources and restore executable permissions
+        env:
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          import os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'desktop/packaging')
+          from verify import verify_machine
+          target = os.environ['TARGET']
+          windows = target.startswith('windows-')
+          native = Path('desktop/build/installer-resources') / ('windows' if windows else 'linux') / 'native'
+          decoder = native / ('ffmpeg.exe' if windows else 'ffmpeg')
+          dsp = native / ('nekoplayer_audio_effects.dll' if windows else 'libnekoplayer_audio_effects.so')
+          for binary in (decoder, dsp):
+              verify_machine(binary, target.split('-')[1])
+          if not windows:
+              decoder.chmod(0o755)
+          PYTHON
       - name: Install Linux package and UI dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg fakeroot rpm libasound2 libxrender1 libxtst6 libxi6 libgl1 xvfb
+        run: |
+          sudo apt-get update
+          . /etc/os-release
+          alsa=libasound2
+          if [ "$VERSION_ID" = '24.04' ]; then alsa=libasound2t64; fi
+          sudo apt-get install -y ffmpeg fakeroot rpm "$alsa" libxrender1 libxtst6 libxi6 libgl1 xvfb
       - name: Install Windows packaging toolchain
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install wixtoolset --version=3.14.1 -y --no-progress
-          $wixBin = (Get-ChildItem 'C:\Program Files (x86)' -Directory -Filter 'WiX Toolset*' | Sort-Object Name -Descending | Select-Object -First 1).FullName + '\bin'
-          if (-not (Test-Path "$wixBin\candle.exe")) { throw 'WiX 3 compiler is missing' }
+          $candle = Get-Command candle.exe -ErrorAction SilentlyContinue
+          if (-not $candle) {
+            $candle = Get-ChildItem 'C:\Program Files (x86)\WiX Toolset*\bin\candle.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $candle) {
+            choco install wixtoolset --version=3.14.1 -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'WiX installation failed' }
+            $candle = Get-ChildItem 'C:\Program Files (x86)\WiX Toolset*\bin\candle.exe' | Select-Object -First 1
+          }
+          if (-not $candle) { throw 'WiX 3 compiler is missing' }
+          $candlePath = if ($candle -is [System.Management.Automation.ApplicationInfo]) { $candle.Source } else { $candle.FullName }
+          $wixBin = Split-Path $candlePath
+          if (-not (Test-Path "$wixBin\light.exe")) { throw 'WiX 3 linker is missing' }
           $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Compile and verify desktop regression tests
         if: runner.os == 'Linux'
         run: ./gradlew -p desktop test --no-daemon --max-workers=1 --no-parallel -Pkotlin.compiler.execution.strategy=in-process
       - name: Build installers with bundled runtime
         shell: bash
-        run: ./gradlew -p desktop packageDistributionForCurrentOS --no-daemon --max-workers=1 --no-parallel -Pkotlin.compiler.execution.strategy=in-process
+        run: ./gradlew -p desktop createDistributable packageDistributionForCurrentOS --no-daemon --max-workers=1 --no-parallel -Pkotlin.compiler.execution.strategy=in-process
       - name: Verify packaged decoder and DSP on Linux
         if: runner.os == 'Linux'
         run: |
@@ -91,7 +122,7 @@ jobs:
           $process = Start-Process msiexec.exe -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart', '/L*v', "$env:RUNNER_TEMP\nekoplayer-install.log") -Wait -PassThru
           if ($process.ExitCode -notin @(0, 3010)) { Get-Content "$env:RUNNER_TEMP\nekoplayer-install.log" -Tail 80; throw "MSI install failed: $($process.ExitCode)" }
           $roots = @($env:LOCALAPPDATA, $env:ProgramFiles, ${env:ProgramFiles(x86)})
-          $exe = $roots | ForEach-Object { Get-ChildItem $_ -Filter NekoPlayer.exe -Recurse -ErrorAction SilentlyContinue } | Select-Object -First 1
+          $exe = $roots | ForEach-Object { Get-ChildItem (Join-Path $_ 'NekoPlayer') -Filter NekoPlayer.exe -Recurse -ErrorAction SilentlyContinue } | Select-Object -First 1
           if (-not $exe) { throw 'Installed application launcher is missing' }
           $selfTest = Start-Process $exe.FullName -ArgumentList '--self-test' -Wait -PassThru
           if ($selfTest.ExitCode -ne 0) { throw 'Installed native self-test failed' }

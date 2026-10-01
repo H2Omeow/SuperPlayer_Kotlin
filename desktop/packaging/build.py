@@ -126,6 +126,10 @@ def build(target, native_only=False):
         licenses.mkdir(exist_ok=True)
         shutil.copy2(source / "COPYING.LGPLv2.1", licenses / "FFmpeg-LGPL-2.1.txt")
         shutil.copy2(source / "LICENSE.md", licenses / "FFmpeg-LICENSE.md")
+        manifest = {"target": target, "version": "1.1.0-pre",
+                    "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+                    "ffmpeg_source": PINS["ffmpeg"], "ffmpeg_configure": configure}
+        (resource_dir / "build-info.json").write_text(json.dumps(manifest, indent=2) + "\n")
         dist = DESKTOP / "build" / "dist"
         dist.mkdir(exist_ok=True)
         shutil.copy2(source_archive, dist / source_archive.name)

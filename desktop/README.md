@@ -11,7 +11,7 @@ Windows 发布 MSI/EXE 安装包，安装时会创建桌面和开始菜单快捷
 | Windows 10/11 | x64 | 安装 MSI 或 EXE 后从桌面/开始菜单启动 |
 | Linux glibc 2.35+ | x64、ARM64 | 安装 DEB/RPM 后从应用菜单启动 |
 
-Linux 需要桌面会话和 X11/ALSA/字体库；Wayland 需要 XWayland。Debian/Ubuntu 可安装 `libasound2`（新版本为 `libasound2t64`）、`libx11-6`、`libxext6`、`libxi6`、`libxrender1`、`libxtst6`、`libfreetype6`、`fontconfig`、`fonts-noto-cjk`。不支持 Alpine/musl。Windows 便携包未使用商业代码签名证书。
+Linux 需要桌面会话和 X11/ALSA/字体库；Wayland 需要 XWayland。Debian/Ubuntu 可安装 `libasound2`（新版本为 `libasound2t64`）、`libx11-6`、`libxext6`、`libxi6`、`libxrender1`、`libxtst6`、`libfreetype6`、`fontconfig`、`fonts-noto-cjk`。不支持 Alpine/musl。Windows 安装包未使用商业代码签名证书。
 
 ## 功能与边界
 
@@ -22,7 +22,7 @@ Linux 需要桌面会话和 X11/ALSA/字体库；Wayland 需要 XWayland。Debia
 - 本站自动双向同步本地收藏、历史和歌单；空白设备登录本站后恢复网易云 Cookie、酷狗原版/概念版完整 Cookie 与当前酷狗平台。
 - 桌面端后续登录、导入、退出、清空音乐平台账号或切换酷狗平台时，会立即把凭据变更回写云端。
 - 播放前查询可用音质：默认音质优先，否则最高可用。下载只展示验证通过的音质并保留原文件。
-- 网易云/酷狗/本站评论、回复；网易云/本站点赞和删除本人评论。酷狗点赞和删除仍按已验证协议开放。
+- 网易云/酷狗/本站评论、回复；网易云/本站点赞和删除本人评论。酷狗点赞和删除协议未验证，保持禁用。
 - 网易云、酷狗和音源均支持 MV 搜索与播放；MV 和歌词请求不消耗音源每日音乐链接额度。
 - 10 段 EQ、低音、声场、混响、响度、母带；复用既有 DSP 和预设 ID。
 
@@ -45,8 +45,8 @@ Linux：`$XDG_CONFIG_HOME/NekoPlayer` 或 `~/.config/NekoPlayer`；Windows：`%A
 ```sh
 cmake -S desktop/native -B desktop/build/native -DCMAKE_BUILD_TYPE=Release
 cmake --build desktop/build/native
-./gradlew -p desktop test installDist
-JAVA_OPTS="-Djava.library.path=$PWD/desktop/build/native" desktop/build/install/NekoPlayer-desktop/bin/NekoPlayer-desktop
+./deploy/build-desktop-low-resource.sh -p desktop test
+./deploy/build-desktop-low-resource.sh -p desktop run
 ```
 
 Gradle 同步可移植业务源码，平台适配独立维护。发布 CI 当前构建 Linux x64、Linux ARM64 和 Windows x64；Compose Desktop 官方安装器不再承诺 Windows ARM64、32 位或 ARMv7。低资源构建脚本 `deploy/build-desktop-low-resource.sh` 将 Gradle 限制为单 worker、单 CPU 和约 2GB 总内存。
