@@ -144,12 +144,22 @@ jobs:
           import os, shutil
           destination = Path('desktop/build/publish')
           destination.mkdir(parents=True, exist_ok=True)
+          target = os.environ["TARGET"]
           installers = [path for path in Path('desktop/build/compose/binaries/main').rglob('*') if path.suffix in ('.msi', '.exe', '.deb', '.rpm') and path.parent.name in ('msi', 'exe', 'deb', 'rpm')]
           assert len(installers) == 2, f'Expected two installers, found {installers}'
           version = os.environ.get('GITHUB_REF_NAME', '1.1.0-pre')
           if not version.startswith('v'): version = 'v1.1.0-pre'
           for installer in installers:
-              shutil.copy2(installer, destination / f'NekoPlayer-{version}-{os.environ["TARGET"]}{installer.suffix}')
+              shutil.copy2(installer, destination / f'NekoPlayer-{version}-{target}{installer.suffix}')
+          # Linux portable archives contain the bundled JVM and executable launcher,
+          # so they run on RPM based and other glibc distributions without a package manager.
+          if target.startswith('linux-'):
+              import tarfile
+              app = Path('desktop/build/compose/binaries/main/app/NekoPlayer')
+              assert (app / 'bin/NekoPlayer').is_file(), f'Missing portable launcher: {app}'
+              portable = destination / f'NekoPlayer-{version}-{target}.tar.gz'
+              with tarfile.open(portable, 'w:gz') as archive:
+                  archive.add(app, arcname='NekoPlayer')
           for source in Path('desktop/build/dist').glob('ffmpeg-*.tar.xz'):
               shutil.copy2(source, destination / source.name)
           PY
@@ -174,8 +184,15 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          files = [path for path in Path('artifacts').iterdir() if path.suffix in ('.msi', '.exe', '.deb', '.rpm')]
-          assert len(files) == 6, f'Expected 6 installers, found {files}'
+          files = [path for path in Path('artifacts').iterdir()
+                   if path.suffix in ('.msi', '.exe', '.deb', '.rpm') or path.name.endswith('.tar.gz')]
+          assert len(files) == 8, f'Expected 8 desktop packages, found {files}'
+          expected_portable = {'NekoPlayer-${{ github.ref_name }}-linux-x64.tar.gz',
+                               'NekoPlayer-${{ github.ref_name }}-linux-arm64.tar.gz'}
+          actual_portable = {path.name for path in files if path.name.endswith('.tar.gz')}
+          assert expected_portable <= actual_portable, f'Missing Linux portable packages: {expected_portable - actual_portable}'
+          zip_files = list(Path('artifacts').glob('*.zip'))
+          assert not zip_files, f'ZIP packages are not published: {zip_files}'
           PY
           cd artifacts
           sha256sum * > desktop-SHA256SUMS.txt

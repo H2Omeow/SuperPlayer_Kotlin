@@ -4,12 +4,12 @@ Kotlin/JVM、Compose Desktop 桌面应用，复用 Android 的业务 API、音�
 
 ## 安装
 
-Windows 发布 MSI/EXE 安装包，安装时会创建桌面和开始菜单快捷方式，安装包内置 Java 运行时，安装后可直接启动。Linux 发布 DEB/RPM 包；开发调试才使用可运行目录，不要求用户手动解压。
+Windows 发布 MSI/EXE 安装包，安装时会创建桌面和开始菜单快捷方式，安装包内置 Java 运行时，安装后可直接启动。Linux 同时发布 DEB、RPM 和内置 Java 的便携 tar.gz：Debian/Ubuntu 可直接安装 DEB，Fedora/openSUSE 等可安装 RPM，其他 glibc 系统可解压 tar.gz 后运行目录中的启动器。
 
 | 系统 | 架构 | 启动 |
 | --- | --- | --- |
 | Windows 10/11 | x64 | 安装 MSI 或 EXE 后从桌面/开始菜单启动 |
-| Linux glibc 2.35+ | x64、ARM64 | 安装 DEB/RPM 后从应用菜单启动 |
+| Linux glibc 2.35+ | x64、ARM64 | DEB/RPM 安装，或解压 tar.gz 后运行 `NekoPlayer` |
 
 Linux 需要桌面会话和 X11/ALSA/字体库；Wayland 需要 XWayland。Debian/Ubuntu 可安装 `libasound2`（新版本为 `libasound2t64`）、`libx11-6`、`libxext6`、`libxi6`、`libxrender1`、`libxtst6`、`libfreetype6`、`fontconfig`、`fonts-noto-cjk`。不支持 Alpine/musl。Windows 安装包未使用商业代码签名证书。
 
@@ -40,7 +40,7 @@ Linux：`$XDG_CONFIG_HOME/NekoPlayer` 或 `~/.config/NekoPlayer`；Windows：`%A
 
 ## 开发与构建
 
-需要 JDK 17+、CMake、C++17 编译器和 PATH 中的 FFmpeg，不需要 Android SDK。发布包通过 Compose Desktop 生成 MSI、EXE、DEB 和 RPM，并内置 Java 运行时。
+需要 JDK 17+、CMake、C++17 编译器和 PATH 中的 FFmpeg，不需要 Android SDK。发布包通过 Compose Desktop 生成 MSI、EXE、DEB、RPM 和 Linux tar.gz，并内置 Java 运行时。Release 不上传 ZIP 桌面包。
 
 ```sh
 cmake -S desktop/native -B desktop/build/native -DCMAKE_BUILD_TYPE=Release

@@ -17,7 +17,7 @@
 
 - 桌面 UI 改为 Compose Desktop，横屏播放页与 Android 结构保持一致。
 - Windows 发布内置 Java 运行时的 MSI/EXE 安装包，安装后创建桌面和开始菜单快捷方式。
-- Linux 发布 x64、ARM64 的 DEB/RPM 安装包。
+- Linux 发布 x64、ARM64 的 DEB/RPM 安装包和内置 Java 的便携 tar.gz；其他 glibc 系统可解压后运行 `NekoPlayer` 启动器。Release 不上传 ZIP 桌面包。
 - 低资源构建限制为单 CPU、单 Gradle worker 和约 2GB 内存。
 
 ## 验证
