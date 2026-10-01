@@ -113,6 +113,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           app=desktop/build/compose/binaries/main/app/NekoPlayer
+          # Gradle resource copying can drop executable mode bits; restore them
+          # on the final bundled binaries immediately before the self-test.
+          chmod 755 "$app/lib/app/resources/native/ffmpeg" \
+            "$app/lib/app/resources/native/libnekoplayer_audio_effects.so"
           "$app/bin/NekoPlayer" --self-test
       - name: Install MSI and verify shortcuts, launcher and bundled runtime
         if: runner.os == 'Windows'
