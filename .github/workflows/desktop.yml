@@ -72,7 +72,10 @@ jobs:
           for binary in (decoder, dsp):
               verify_machine(binary, target.split('-')[1])
           if not windows:
+              # Artifact downloads do not preserve executable mode bits.
+              # Restore them before Gradle copies resources into the app bundle.
               decoder.chmod(0o755)
+              dsp.chmod(0o755)
           PYTHON
       - name: Install Linux package and UI dependencies
         if: runner.os == 'Linux'
