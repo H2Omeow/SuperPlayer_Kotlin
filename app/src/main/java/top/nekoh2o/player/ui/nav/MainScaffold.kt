@@ -8,6 +8,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -22,9 +23,11 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -52,7 +55,7 @@ fun MainScaffold(
     onStartSsoLogin: () -> Unit
 ) {
     val state by vm.ui.collectAsState()
-    var tab by remember { mutableStateOf(Tab.HOME) }
+    var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(state.toast) {
@@ -62,7 +65,8 @@ fun MainScaffold(
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val useRail = maxWidth >= 600.dp
         // 全局壁纸背景层
         if (state.settings.globalBgEnabled && state.wallpaperUrl != null) {
             AsyncImage(
@@ -86,7 +90,7 @@ fun MainScaffold(
             bottomBar = {
                 Column {
                     MiniPlayer(vm, onOpenFullPlayer)
-                    NavigationBar {
+                    if (!useRail) NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
                         Tab.entries.forEach { t ->
                             NavigationBarItem(
                                 selected = tab == t,
@@ -94,7 +98,7 @@ fun MainScaffold(
                                     tab = t
                                     if (t == Tab.MUSIC && state.recSongs.isEmpty()) vm.loadRecommend()
                                 },
-                                icon = { Icon(t.icon, contentDescription = t.label) },
+                                icon = { Icon(t.icon, contentDescription = null) },
                                 label = { Text(t.label) }
                             )
                         }
@@ -102,11 +106,29 @@ fun MainScaffold(
                 }
             }
         ) { pad ->
-            Box(Modifier.padding(pad)) {
+            Row(Modifier.padding(pad)) {
+                if (useRail) NavigationRail(Modifier.fillMaxHeight(),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    header = { Text("NEKO", Modifier.padding(vertical = 24.dp),
+                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+                ) {
+                    Tab.entries.forEach { destination ->
+                        NavigationRailItem(selected = tab == destination,
+                            onClick = {
+                                tab = destination
+                                if (destination == Tab.MUSIC && state.recSongs.isEmpty()) vm.loadRecommend()
+                            },
+                            icon = { Icon(destination.icon, null) },
+                            label = { Text(destination.label) },
+                            modifier = Modifier.padding(vertical = 8.dp))
+                    }
+                }
+                Box(Modifier.weight(1f)) {
                 when (tab) {
                     Tab.HOME -> HomeScreen(vm, onOpenFullPlayer)
                     Tab.MUSIC -> MusicScreen(vm)
                     Tab.MINE -> MineScreen(vm, onStartSsoLogin)
+                }
                 }
             }
         }
@@ -119,10 +141,11 @@ private fun MiniPlayer(vm: PlayerViewModel, onOpenFullPlayer: () -> Unit) {
     val cur = state.current ?: return
 
     // surfaceContainerHigh 已由 NekoTheme 按 controlAlpha 调过透明度
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+    Surface(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column {
             val progress = if (state.durationMs > 0)
-                state.positionMs.toFloat() / state.durationMs else 0f
+                (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier.fillMaxWidth().height(2.dp)
@@ -143,7 +166,7 @@ private fun MiniPlayer(vm: PlayerViewModel, onOpenFullPlayer: () -> Unit) {
                         model = cur.pc?.let { "$it?param=100y100" },
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
                     )
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
@@ -187,10 +210,7 @@ private fun MiniPlayer(vm: PlayerViewModel, onOpenFullPlayer: () -> Unit) {
                         )
                     }
                 }
-                IconButton(onClick = { vm.prev() }) {
-                    Icon(Icons.Filled.SkipPrevious, contentDescription = "上一首")
-                }
-                IconButton(onClick = { vm.togglePlay() }) {
+                FilledIconButton(onClick = { vm.togglePlay() }) {
                     androidx.compose.animation.AnimatedContent(
                         targetState = state.isPlaying,
                         transitionSpec = {

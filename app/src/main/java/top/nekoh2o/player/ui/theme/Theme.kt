@@ -8,21 +8,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.Shapes
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 
-/** 网易云红。只作强调色用：歌词渐变、进度条、开关、收藏心形等，不用于普通文字 */
-private val Primary = Color(0xFFEC4141)
+/** 柔和珊瑚色用于强调和选中状态。 */
+private val Primary = Color(0xFFFF8C96)
 
 // App 以壁纸为背景，全局文字统一白色
 private val White = Color(0xFFFFFFFF)
-private val WhiteVariant = Color(0xE6FFFFFF)  // 次要文字
-private val WhiteOutline = Color(0x80FFFFFF)  // 描边
-private val WhiteDivider = Color(0x33FFFFFF)  // 分割线
+private val WhiteVariant = Color(0xFFB8B9C5)
+private val WhiteOutline = Color(0xFF858592)
+private val WhiteDivider = Color(0xFF34343F)
 
 /**
  * 全局主题。
@@ -31,7 +34,7 @@ private val WhiteDivider = Color(0x33FFFFFF)  // 分割线
  * @param translucent 是否开启壁纸背景。开启后所有 surface / container 系列颜色统一按
  *   [controlAlpha] 变半透明，这样 Card、ListItem、TabRow、TopAppBar、AlertDialog、
  *   ModalBottomSheet 等所有 Material3 控件都会跟着透明，不需要在每个调用点单独改颜色。
- * @param uiScale UI 缩放倍率（0.8 ~ 1.3），同时缩放 density 和 fontScale
+ * @param uiScale UI 缩放倍率（0.8 ~ 1.3），保留系统字体缩放，不重复放大文字
  */
 @Composable
 fun NekoTheme(
@@ -43,7 +46,21 @@ fun NekoTheme(
     // 始终用深色配色：全局白字需要深色底衬，浅色方案会出现白字白底不可读
     val base = darkColorScheme(
         primary = Primary,
-        onPrimary = White,
+        onPrimary = Color(0xFF351218),
+        primaryContainer = Color(0xFF512830),
+        secondary = Color(0xFFCAC2DC),
+        secondaryContainer = Color(0xFF35303F),
+        tertiary = Color(0xFF9FD5C4),
+        background = Color(0xFF111116),
+        surface = Color(0xFF19191F),
+        surfaceDim = Color(0xFF111116),
+        surfaceBright = Color(0xFF37373F),
+        surfaceVariant = Color(0xFF303039),
+        surfaceContainerLowest = Color(0xFF0D0D12),
+        surfaceContainerLow = Color(0xFF17171D),
+        surfaceContainer = Color(0xFF1E1E25),
+        surfaceContainerHigh = Color(0xFF25252D),
+        surfaceContainerHighest = Color(0xFF303039),
         onPrimaryContainer = White,
         onSecondary = White,
         onSecondaryContainer = White,
@@ -64,14 +81,20 @@ fun NekoTheme(
         inverseOnSurface = White
     )
 
-    // 应用 UI 缩放：同时缩放 density 和 fontScale
     val density = LocalDensity.current
     val scaledDensity = remember(uiScale, density) {
-        Density(density.density * uiScale, density.fontScale * uiScale)
+        Density(density.density * uiScale.coerceIn(0.8f, 1.3f), density.fontScale)
     }
 
     MaterialTheme(
-        colorScheme = if (translucent) base.withControlAlpha(controlAlpha) else base
+        colorScheme = if (translucent) base.withControlAlpha(controlAlpha) else base,
+        shapes = Shapes(
+            extraSmall = RoundedCornerShape(8.dp),
+            small = RoundedCornerShape(12.dp),
+            medium = RoundedCornerShape(16.dp),
+            large = RoundedCornerShape(24.dp),
+            extraLarge = RoundedCornerShape(28.dp)
+        )
     ) {
         // 关键：把根级 LocalContentColor 强制成白色。
         // 壁纸开启时 Scaffold 的 containerColor 是 Color.Transparent，Material3 会用

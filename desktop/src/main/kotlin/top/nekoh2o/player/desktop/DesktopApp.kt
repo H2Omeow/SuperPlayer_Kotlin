@@ -53,15 +53,17 @@ internal fun DesktopApp(controller: DesktopController) {
         if (controller.fullPlayer) LandscapePlayer(controller)
         else Column(Modifier.fillMaxSize()) {
             Row(Modifier.weight(1f)) {
-                NavigationRail(Modifier.fillMaxHeight().width(90.dp), header = {
-                    Icon(Icons.Default.MusicNote, "NekoPlayer", Modifier.padding(vertical = 22.dp), tint = MaterialTheme.colorScheme.primary)
+                NavigationRail(Modifier.fillMaxHeight().width(100.dp),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow, header = {
+                    Text("NEKO", Modifier.padding(vertical = 26.dp), style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary)
                 }) {
                     listOf("主页" to Icons.Default.Home, "音乐" to Icons.Default.MusicNote, "我的" to Icons.Default.Person).forEach { (label, icon) ->
                         NavigationRailItem(selected = tab == label, onClick = {
                             tab = label
                             if (label == "主页") controller.loadRecommendations()
                             if (label == "我的") controller.showLibrary("我的收藏")
-                        }, icon = { Icon(icon, label) }, label = { Text(label) }, modifier = Modifier.padding(vertical = 6.dp))
+                        }, icon = { Icon(icon, null) }, label = { Text(label) }, modifier = Modifier.padding(vertical = 8.dp))
                     }
                     Spacer(Modifier.weight(1f))
                     IconButton(onClick = controller::accounts) { Icon(Icons.Default.AccountCircle, "账号与 Cookie") }
@@ -70,14 +72,16 @@ internal fun DesktopApp(controller: DesktopController) {
                 Column(Modifier.weight(1f).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(controller.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                            Text("音乐，刚刚好。", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                            Text(if (tab == "我的") controller.title else if (tab == "主页") "发现你的下一首喜欢" else "探索音乐",
+                                style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                             Text(if (tab == "我的") "收藏、歌单与最近播放" else "现在开始，听见喜欢。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         TextButton(onClick = controller::openLocal) { Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text("本地音乐") }
                         FilledTonalButton(onClick = controller::accounts) { Text(if (CookieStore.appTokenValue().isBlank()) "登录本站" else "账号中心") }
                     }
                     if (tab == "我的") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf("我的收藏", "最近播放", "播放队列").forEach { label ->
                                 FilterChip(selected = controller.title == label, onClick = { controller.showLibrary(label) }, label = { Text(label) })
                             }
@@ -99,7 +103,8 @@ internal fun DesktopApp(controller: DesktopController) {
                     if (controller.videoMode) VideoResults(controller, Modifier.weight(1f))
                     else SongResults(controller, Modifier.weight(1f))
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(controller.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(controller.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (controller.hasMore) TextButton(onClick = { controller.search(true) }, enabled = !controller.loading) { Text("加载更多") }
                         TextButton(onClick = controller::effects) { Icon(Icons.Default.Equalizer, null); Spacer(Modifier.width(4.dp)); Text("音效") }
                     }
@@ -131,7 +136,9 @@ internal fun DesktopApp(controller: DesktopController) {
 
 @Composable
 private fun SourcePicker(controller: DesktopController, onUsage: () -> Unit) {
-    Column {
+    var expanded by remember { mutableStateOf(false) }
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             listOf("netease" to "网易云音乐", "kugou" to "酷狗音乐", "animemusic-kg" to "惜缘惜梦音源").forEach { (source, name) ->
                 FilterChip(selected = if (source.startsWith("animemusic-")) controller.source.startsWith("animemusic-") else controller.source == source,
@@ -141,13 +148,25 @@ private fun SourcePicker(controller: DesktopController, onUsage: () -> Unit) {
             TextButton(onClick = onUsage) { Text("音源统计") }
         }
         if (controller.source.startsWith("animemusic-")) {
-            if (CookieStore.appTokenValue().isBlank()) Text("登录本站账号后即可使用，共享每日 10,000 次音乐链接额度", style = MaterialTheme.typography.bodySmall)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(AnimemusicRepository.platforms) { (id, label) ->
-                    FilterChip(controller.source == "animemusic-$id", onClick = { controller.switchSource("animemusic-$id") }, label = { Text(label) })
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box {
+                    OutlinedButton(onClick = { expanded = true }) {
+                        Text(AnimemusicRepository.label(controller.source.removePrefix("animemusic-")))
+                        Icon(Icons.Default.ArrowDropDown, null)
+                    }
+                    DropdownMenu(expanded, { expanded = false }) {
+                        AnimemusicRepository.platforms.forEach { (id, label) ->
+                            DropdownMenuItem(text = { Text(label) }, onClick = {
+                                controller.switchSource("animemusic-$id"); expanded = false
+                            })
+                        }
+                    }
                 }
+                Text("音乐链接共享每日额度 · 歌词与 MV 不计入", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
     }
 }
 
@@ -217,16 +236,19 @@ private fun VideoResults(controller: DesktopController, modifier: Modifier) {
 
 @Composable
 private fun MiniPlayer(controller: DesktopController) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
         Row(Modifier.weight(1f).clickable { controller.fullPlayer = true }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Cover(controller.current?.pc, Modifier.size(58.dp), "打开播放器")
-            Column { Text(controller.current?.nm ?: "NekoPlayer", maxLines = 1, overflow = TextOverflow.Ellipsis); Text(controller.current?.ar ?: "选择音乐开始播放", style = MaterialTheme.typography.bodySmall) }
+            Column(Modifier.weight(1f)) { Text(controller.current?.nm ?: "NekoPlayer", maxLines = 1, overflow = TextOverflow.Ellipsis); Text(controller.current?.ar ?: "选择音乐开始播放", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
         Column(Modifier.weight(1.3f), horizontalAlignment = Alignment.CenterHorizontally) { PlaybackControls(controller); SeekBar(controller) }
         Row(Modifier.width(155.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.VolumeUp, "音量", Modifier.size(20.dp)); Slider(controller.currentVolume, controller::setVolume, Modifier.weight(1f))
         }
         IconButton(onClick = { controller.fullPlayer = true }) { Icon(Icons.Default.OpenInFull, "横屏播放器") }
+    }
     }
 }
 
