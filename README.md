@@ -2,6 +2,10 @@
 
 支持 Android、Windows 和 Linux 的音乐播放器，接入网易云与酷狗音乐曲库。
 
+## UI 整理与新桌面开发
+
+Android 与原桌面版正在统一主题与导航。`desktop_flutter/` 为 Flutter 桌面迁移开发版，已接入本地与在线音乐、账号、下载、评论、MV、原版 DSP 和桌面系统集成，尚未完成四平台实机验收，不替代下述原桌面版。新端只面向 Windows / Linux 的 x86_64、ARM64；本地构建使用 `deploy/` 中的低占用脚本，不自动上传或发布。
+
 ## 桌面版（1.1.0-pre）
 
 - Windows x64 提供标准 MSI/EXE 安装包，安装后创建桌面和开始菜单快捷方式；Linux 提供 x64、ARM64 的 DEB/RPM，所有安装包内置 Java 运行时。
