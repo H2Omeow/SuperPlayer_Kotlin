@@ -6,6 +6,7 @@ import 'package:nekoplayer_desktop/domain/online_music.dart';
 import 'package:nekoplayer_desktop/download_controller.dart';
 import 'package:nekoplayer_desktop/player_controller.dart';
 import 'package:nekoplayer_desktop/playback/playback_engine.dart';
+import 'package:path/path.dart' as path;
 
 import 'fakes.dart';
 
@@ -30,7 +31,7 @@ void main() {
   });
 
   Future<File> song([String name = 'Neko - 夜晚.FLAC']) =>
-      File('${directory.path}/$name').writeAsString('fake-audio');
+      File(path.join(directory.path, name)).writeAsString('fake-audio');
 
   test('download import keeps song metadata without autoplay', () async {
     final audio = await song('sanitized - task-123.flac');

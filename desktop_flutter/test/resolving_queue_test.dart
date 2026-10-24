@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -180,12 +181,13 @@ void main() {
   });
 
   test('local paths remain file URIs and need no online source', () async {
+    final localPath = Platform.isWindows
+        ? r'C:\music\夜 晚.flac'
+        : '/music/夜 晚.flac';
     Uri? loaded;
     final queue = ResolvingQueue(load: (uri) async => loaded = uri);
-    await queue.open([
-      const Track(path: '/music/夜 晚.flac', title: '夜晚', artist: 'Neko'),
-    ], 0);
+    await queue.open([Track(path: localPath, title: '夜晚', artist: 'Neko')], 0);
     expect(loaded?.scheme, 'file');
-    expect(loaded?.toFilePath(), '/music/夜 晚.flac');
+    expect(loaded?.toFilePath(), localPath);
   });
 }
