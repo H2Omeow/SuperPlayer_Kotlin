@@ -7,7 +7,7 @@ plugins {
     id("org.jetbrains.compose") version "1.7.3"
 }
 repositories { google(); mavenCentral() }
-version = "1.1.0-pre"
+version = "1.1.0"
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8) } }
 tasks.withType<JavaCompile>().configureEach { sourceCompatibility = "1.8"; targetCompatibility = "1.8" }
 dependencies {

@@ -62,9 +62,9 @@ add_subdirectory("../native" "native")
 # them to the application.
 include("../native/windows_angle.cmake")
 include(flutter/generated_plugins.cmake)
-if(FLUTTER_TARGET_PLATFORM STREQUAL "windows-arm64")
+if(NEKO_ANGLE_LIBRARIES)
   list(FILTER PLUGIN_BUNDLED_LIBRARIES EXCLUDE REGEX "/ANGLE/")
-  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${NEKO_ARM64_ANGLE_LIBRARIES})
+  list(APPEND PLUGIN_BUNDLED_LIBRARIES ${NEKO_ANGLE_LIBRARIES})
 endif()
 
 

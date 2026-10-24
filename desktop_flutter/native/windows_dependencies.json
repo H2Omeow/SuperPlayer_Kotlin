@@ -1,0 +1,26 @@
+{
+  "llvm_mingw": {
+    "url": "https://github.com/mstorsjo/llvm-mingw/releases/download/20261020/llvm-mingw-20261020-ucrt-ubuntu-22.04-x86_64.tar.xz",
+    "sha256": "55064b60b991a1e1e8090b8c2f84e82b22cfe5903d12c159d65064cf5e8ae335"
+  },
+  "angle_headers": {
+    "url": "https://github.com/alexmercerind/flutter-windows-ANGLE-OpenGL-ES/releases/download/v1.0.1/ANGLE.7z",
+    "sha256": "cc5911bb15d596fd5a2b362613ad35b7093b427117269a7359054a65746a5f9a"
+  },
+  "angle_runtime": {
+    "url": "https://api.nuget.org/v3-flatcontainer/avalonia.angle.windows.natives/2.1.27548.20260419/avalonia.angle.windows.natives.2.1.27548.20260419.nupkg",
+    "sha256": "76d67901097e9173d155efc4c2b7d2c8e3122f2c2e0415028eb0c88478a386f9"
+  },
+  "mpv_x64": {
+    "url": "https://github.com/media-kit/libmpv-win32-video-cmake/releases/download/20241021/mpv-dev-x86_64-20241021-git-0f78584.7z",
+    "sha256": "e23701df0adc1fe57c8ede3ff313513b0b80519870058c2d35ff02754284a007"
+  },
+  "mpv_arm64": {
+    "url": "https://github.com/media-kit/libmpv-win32-video-cmake/releases/download/20241021/mpv-dev-aarch64-20241021-git-0f78584.7z",
+    "sha256": "d445d02ab2ee60b1b5988f08ce4d2394cdcc594e98321b746a313313e96133ae"
+  },
+  "inno_setup": {
+    "url": "https://github.com/jrsoftware/issrc/releases/download/is-6_5_4/innosetup-6.5.4.exe",
+    "sha256": "fa73bf47a4da250d185d07561c2bfda387e5e20db77e4570004cf6a133cc10b1"
+  }
+}

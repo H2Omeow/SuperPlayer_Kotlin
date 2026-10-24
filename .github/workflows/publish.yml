@@ -1,0 +1,96 @@
+name: Publish NekoPlayer
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a stable release after all platforms pass validation'
+        type: boolean
+        default: false
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nekoplayer-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  android:
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+  desktop:
+    uses: ./.github/workflows/flutter-desktop.yml
+  publish:
+    needs: [android, desktop]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Validate complete release and calculate checksums
+        id: version
+        shell: python
+        run: |
+          import hashlib
+          import os
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, 'desktop_flutter/tool')
+          from package_release import release_version
+          version = release_version()
+          tag = 'v' + version
+          if os.environ['GITHUB_REF_TYPE'] == 'tag' and os.environ['GITHUB_REF_NAME'] != tag:
+              raise ValueError('Tag does not match release version')
+          expected = {f'NekoPlayer-{tag}.apk'}
+          for arch in ('x64', 'arm64'):
+              expected.add(f'NekoPlayer-{tag}-windows-{arch}-setup.exe')
+              expected.update(f'NekoPlayer-{tag}-linux-{arch}.{extension}' for extension in ('deb', 'rpm', 'tar.gz'))
+          directory = Path('dist')
+          actual = {path.name for path in directory.iterdir()}
+          if actual != expected:
+              raise ValueError(f'Release incomplete or unexpected assets: missing={expected-actual}, extra={actual-expected}')
+          lines = []
+          for name in sorted(expected):
+              path = directory / name
+              if path.stat().st_size < 1_000_000:
+                  raise ValueError(f'Invalid release asset size: {name}')
+              with path.open('rb') as stream:
+                  lines.append(f'{hashlib.file_digest(stream, "sha256").hexdigest()}  {name}\n')
+          (directory / 'SHA256SUMS').write_text(''.join(lines))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write(f'tag={tag}\n')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-release
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+      - name: Publish stable release atomically
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Refusing to overwrite an existing release.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "NekoPlayer ${RELEASE_TAG#v}" \
+            --notes-file "docs/RELEASE_${RELEASE_TAG}.md" --draft dist/*
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets | length' | grep -qx 10
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --latest

@@ -30,6 +30,7 @@ class WindowsAngleTests(unittest.TestCase):
     def configure(self, platform="windows-arm64", source=None):
         environment = os.environ.copy()
         environment.pop("NEKO_WINDOWS_ARM64_ANGLE_DIR", None)
+        environment.pop("NEKO_WINDOWS_ANGLE_DIR", None)
         return subprocess.run(
             ["cmake", f"-DFLUTTER_TARGET_PLATFORM={platform}",
              f"-DNEKO_WINDOWS_ARM64_ANGLE_DIR={source or self.source}",
@@ -74,6 +75,17 @@ class WindowsAngleTests(unittest.TestCase):
 
     def test_x64_does_not_require_an_arm64_dependency_override(self):
         self.assertEqual(self.configure("windows-x64").returncode, 0)
+
+    def test_x64_override_checks_every_dll(self):
+        self.prepare(0x8664)
+        environment = os.environ.copy()
+        environment["NEKO_WINDOWS_ANGLE_DIR"] = str(self.source)
+        command = ["cmake", "-DFLUTTER_TARGET_PLATFORM=windows-x64", "-P", str(self.script)]
+        result = subprocess.run(command, cwd=self.build, env=environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        (self.source / "libEGL.dll").write_bytes(pe(0xAA64))
+        result = subprocess.run(command, cwd=self.build, env=environment, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,167 @@
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tarfile
+import tempfile
+
+from check_artifact import TARGETS, verify_bundle
+
+
+ROOT = Path(__file__).resolve().parents[1]
+HOMEPAGE = "https://github.com/H2Omeow/SuperPlayer_Kotlin"
+
+
+def release_version():
+    match = re.search(r"^version: (\d+\.\d+\.\d+)\+(\d+)$", (ROOT / "pubspec.yaml").read_text(), re.MULTILINE)
+    if not match:
+        raise ValueError("A stable Flutter version and build number are required")
+    version, build = match.groups()
+    android = dict(line.split("=", 1) for line in (ROOT.parent / "app/version.properties").read_text().splitlines() if "=" in line)
+    if android.get("versionName") != version or android.get("versionCode") != build:
+        raise ValueError("Android and Flutter release versions must match")
+    return version
+
+
+def run(arguments):
+    subprocess.run(list(map(str, arguments)), check=True)
+
+
+def stage_bundle(target, bundle, staging):
+    verify_bundle(target, bundle, require_decoders=True)
+    shutil.copytree(bundle, staging, symlinks=True)
+    (staging / "release-info.json").write_text(json.dumps({
+        "version": release_version(), "target": target,
+        "commit": os.environ.get("GITHUB_SHA", subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()),
+        "desktop": "Flutter",
+    }, indent=2) + "\n")
+    license_file = ROOT.parent / "LICENSE"
+    if license_file.is_file():
+        shutil.copy2(license_file, staging / "LICENSE")
+    return staging
+
+
+def linux_packages(target, bundle, output):
+    version = release_version()
+    arm64 = target.endswith("arm64")
+    deb_arch, rpm_arch = ("arm64", "aarch64") if arm64 else ("amd64", "x86_64")
+    basename = f"NekoPlayer-v{version}-{target}"
+    with tempfile.TemporaryDirectory(prefix="nekoplayer-package-") as temporary:
+        work = Path(temporary)
+        payload = stage_bundle(target, bundle, work / "NekoPlayer")
+        (payload / "NekoPlayer").write_text('#!/bin/sh\ncd -- "$(dirname -- "$(readlink -f -- "$0")")" || exit 1\nexec ./nekoplayer "$@"\n')
+        (payload / "NekoPlayer").chmod(0o755)
+        with tarfile.open(output / (basename + ".tar.gz"), "w:gz") as archive:
+            archive.add(payload, arcname="NekoPlayer")
+        package = work / "package"
+        library = package / "usr/lib/nekoplayer"
+        library.parent.mkdir(parents=True)
+        shutil.copytree(payload, library, symlinks=True)
+        launcher = package / "usr/bin/nekoplayer"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text('#!/bin/sh\nexec /usr/lib/nekoplayer/nekoplayer "$@"\n')
+        launcher.chmod(0o755)
+        desktop = package / "usr/share/applications/nekoplayer.desktop"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("[Desktop Entry]\nType=Application\nName=NekoPlayer\nComment=Music player\nExec=nekoplayer %U\nIcon=nekoplayer\nTerminal=false\nCategories=AudioVideo;Audio;Player;\n")
+        icon = package / "usr/share/icons/hicolor/192x192/apps/nekoplayer.png"
+        icon.parent.mkdir(parents=True)
+        shutil.copy2(ROOT.parent / "app/src/main/res/mipmap-xxxhdpi/ic_launcher.png", icon)
+        control = package / "DEBIAN/control"
+        control.parent.mkdir()
+        control.write_text(
+            f"Package: nekoplayer\nVersion: {version}\nArchitecture: {deb_arch}\n"
+            "Maintainer: H2Omeow\nSection: sound\nPriority: optional\n"
+            "Depends: libgtk-3-0, libmpv1 | libmpv2, libsecret-1-0, libepoxy0, libgnutls30\n"
+            f"Homepage: {HOMEPAGE}\nDescription: NekoPlayer Flutter music player\n"
+        )
+        run(["dpkg-deb", "--root-owner-group", "--build", package, output / (basename + ".deb")])
+        shutil.rmtree(package / "DEBIAN")
+        rpmbuild = work / "rpm"
+        for directory in ("BUILD", "BUILDROOT", "RPMS", "SOURCES", "SPECS", "SRPMS"):
+            (rpmbuild / directory).mkdir(parents=True)
+        spec = rpmbuild / "SPECS/nekoplayer.spec"
+        spec.write_text(
+            f"Name: nekoplayer\nVersion: {version}\nRelease: 1\nSummary: NekoPlayer Flutter music player\n"
+            f"License: LicenseRef-NekoPlayer\nURL: {HOMEPAGE}\nBuildArch: {rpm_arch}\nAutoReqProv: no\n"
+            "Requires: gtk3, mpv-libs, libsecret, libepoxy, gnutls\n"
+            "%description\nNekoPlayer Flutter music player.\n"
+            f'%install\nmkdir -p "%{{buildroot}}"\ncp -a "{package}/usr" "%{{buildroot}}/"\n'
+            "%files\n/usr/bin/nekoplayer\n/usr/lib/nekoplayer\n/usr/share/applications/nekoplayer.desktop\n/usr/share/icons/hicolor/192x192/apps/nekoplayer.png\n"
+        )
+        run(["rpmbuild", "--define", f"_topdir {rpmbuild}", "--define", "__os_install_post %{nil}", "--define", "_build_id_links none", "--target", rpm_arch, "-bb", spec])
+        packages = list((rpmbuild / "RPMS").rglob("*.rpm"))
+        if len(packages) != 1:
+            raise ValueError("Expected exactly one RPM")
+        shutil.copy2(packages[0], output / (basename + ".rpm"))
+
+
+def windows_installer_script(target, payload, output):
+    version = release_version()
+    arch = "arm64" if target.endswith("arm64") else "x64compatible"
+    return rf'''[Setup]
+AppId=NekoPlayer
+AppName=NekoPlayer
+AppVersion={version}
+AppPublisher=H2Omeow
+AppPublisherURL={HOMEPAGE}
+DefaultDirName={{localappdata}}\Programs\NekoPlayer
+DefaultGroupName=NekoPlayer
+PrivilegesRequired=lowest
+ArchitecturesAllowed={arch}
+ArchitecturesInstallIn64BitMode={arch}
+OutputDir={output}
+OutputBaseFilename=NekoPlayer-v{version}-{target}-setup
+SetupIconFile={ROOT / "windows/runner/resources/app_icon.ico"}
+UninstallDisplayIcon={{app}}\NekoPlayer.exe
+Compression=lzma2/fast
+SolidCompression=yes
+WizardStyle=modern
+[Tasks]
+Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
+[Files]
+Source: "{payload}\*"; DestDir: "{{app}}"; Flags: ignoreversion recursesubdirs createallsubdirs
+[Icons]
+Name: "{{group}}\NekoPlayer"; Filename: "{{app}}\NekoPlayer.exe"
+Name: "{{autodesktop}}\NekoPlayer"; Filename: "{{app}}\NekoPlayer.exe"; Tasks: desktopicon
+[Run]
+Filename: "{{app}}\NekoPlayer.exe"; Description: "Launch NekoPlayer"; Flags: nowait postinstall skipifsilent
+'''
+
+
+def windows_package(target, bundle, output):
+    with tempfile.TemporaryDirectory(prefix="nekoplayer-package-") as temporary:
+        work = Path(temporary)
+        payload = stage_bundle(target, bundle, work / "NekoPlayer")
+        redist = Path(os.environ["VCToolsRedistDir"])
+        arch = "arm64" if target.endswith("arm64") else "x64"
+        libraries = list((redist / arch).glob("Microsoft.VC*.CRT/*.dll"))
+        if not libraries:
+            raise ValueError("Native Visual C++ runtime redistributables are missing")
+        for library in libraries:
+            shutil.copy2(library, payload / library.name)
+        verify_bundle(target, payload, require_decoders=True)
+        source = work / "setup.iss"
+        source.write_text(windows_installer_script(target, payload, output), encoding="utf-8-sig")
+        run([os.environ["NEKO_ISCC"], source])
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("target", choices=TARGETS)
+    parser.add_argument("--bundle", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=ROOT / "build/dist")
+    args = parser.parse_args()
+    output = args.output.resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    if args.target.startswith("linux-"):
+        linux_packages(args.target, args.bundle.resolve(), output)
+    else:
+        windows_package(args.target, args.bundle.resolve(), output)
+
+
+if __name__ == "__main__":
+    main()
