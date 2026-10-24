@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -19,7 +20,7 @@ class DecoderTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="neko-decoder-test-")
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.source_bytes = b"pinned source fixture"
         self.source = {
             "url": "https://example.test/ffmpeg.tar.xz",
@@ -162,7 +163,7 @@ class DecoderTests(unittest.TestCase):
         for machine in (183, 62):
             with self.subTest(machine=machine), patch("build_decoder.subprocess.run", side_effect=[
                 subprocess.CompletedProcess([], 0, "aarch64-linux-gnu\n"),
-                subprocess.CompletedProcess([], 0, f"-I{root}/usr/include -lgnutls"),
+                subprocess.CompletedProcess([], 0, shlex.quote("-I" + (root / "usr/include").as_posix()) + " -lgnutls"),
             ]), patch("build_decoder.run", side_effect=compile_probe):
                 if machine == 183:
                     validate_linux_toolchain("linux-arm64", "/tools/aarch64-linux-gnu-", root, environment)

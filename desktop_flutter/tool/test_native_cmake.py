@@ -87,6 +87,23 @@ class WindowsAngleTests(unittest.TestCase):
         result = subprocess.run(command, cwd=self.build, env=environment, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
 
+    def test_license_follows_the_final_bundle_install_prefix(self):
+        self.prepare()
+        (self.source / "LICENSE").write_text("ANGLE license fixture")
+        project = self.root / "project"
+        project.mkdir()
+        (project / "CMakeLists.txt").write_text(
+            'cmake_minimum_required(VERSION 3.14)\nproject(angle_install NONE)\n'
+            'set(FLUTTER_TARGET_PLATFORM "windows-arm64")\n'
+            f'include("{self.script.as_posix()}")\n'
+        )
+        generated = self.root / "generated"
+        installed = self.root / "installed"
+        subprocess.run(["cmake", "-S", str(project), "-B", str(generated),
+                        f"-DNEKO_WINDOWS_ANGLE_DIR={self.source}"], check=True, capture_output=True)
+        subprocess.run(["cmake", "--install", str(generated), "--prefix", str(installed)], check=True, capture_output=True)
+        self.assertEqual((installed / "licenses/angle/LICENSE").read_text(), "ANGLE license fixture")
+
 
 if __name__ == "__main__":
     unittest.main()
