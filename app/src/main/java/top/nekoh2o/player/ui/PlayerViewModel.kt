@@ -12,6 +12,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +44,7 @@ import android.provider.Settings
 import top.nekoh2o.player.data.repo.DownloadIndex
 import top.nekoh2o.player.data.repo.Downloader
 import top.nekoh2o.player.data.repo.MusicRepository
+import top.nekoh2o.player.data.plugins.PluginStore
 import top.nekoh2o.player.data.repo.UserRepository
 import top.nekoh2o.player.data.store.SettingsStore
 import top.nekoh2o.player.lyric.LyricParser
@@ -156,6 +158,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var suggestJob: Job? = null
     private var pushJob: Job? = null
     private var sleepJob: Job? = null
+    private var sourceSearchJob: Job? = null
+    private var recommendationJob: Job? = null
 
     init {
         pushMineToState()
@@ -209,6 +213,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         _ui.value = _ui.value.copy(downloadedSongs = DownloadIndex.all())
+        viewModelScope.launch {
+            try {
+                PluginStore.awaitReady()
+                PluginStore.state.collect { plugins ->
+                    if (plugins.selectedSource != _ui.value.musicSource) applyMusicSource(plugins.selectedSource)
+                }
+            } catch (failure: CancellationException) { throw failure }
+            catch (_: Exception) { toast("音源数据读取失败，已保留原文件") }
+        }
     }
 
     // ==================== 状态同步 ====================
@@ -317,13 +330,25 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * 切换音乐源（网易云/酷狗）
      */
     fun switchMusicSource(source: String) {
-        if (source.startsWith("animemusic-") && CookieStore.appTokenValue().isBlank()) {
-            toast("请先在我的页面登录本站账号，再使用惜缘惜梦音源")
-            return
-        }
+        if (PluginStore.isPluginSource(source) && PluginStore.source(source) == null) return
+        applyMusicSource(source)
+        viewModelScope.launch { PluginStore.selectSource(source) }
+    }
+
+    private fun applyMusicSource(source: String) {
+        sourceSearchJob?.cancel()
+        recommendationJob?.cancel()
+        searchLoading = false
+        searchKeyword = ""
         _ui.value = _ui.value.copy(
             musicSource = source,
+            searchType = if (PluginStore.isPluginSource(source)) SearchType.SONG else _ui.value.searchType,
             results = emptyList(),
+            artistResults = emptyList(),
+            albumResults = emptyList(),
+            searching = false,
+            recLoading = false,
+            hasMore = false,
             suggestions = emptyList(),
             query = "",
             recSongs = emptyList(),
@@ -332,8 +357,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         toast("已切换到${when {
             source == "netease" -> "网易云音乐"
             source == "kugou" -> "酷狗音乐"
-            source.startsWith("animemusic-") -> "惜缘惜梦音源 · ${top.nekoh2o.player.data.repo.AnimemusicRepository.label(source.removePrefix("animemusic-"))}"
-            else -> source
+            else -> PluginStore.sourceName(source)
         }}")
         loadRecommend()
     }
@@ -486,8 +510,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             results = emptyList(), artistResults = emptyList(), albumResults = emptyList(),
             suggestions = emptyList(), hasMore = true
         )
-        viewModelScope.launch {
-            val result = searchVm.search(kw, _ui.value.searchType, _ui.value.musicSource)
+        sourceSearchJob?.cancel()
+        val source = _ui.value.musicSource
+        val type = _ui.value.searchType
+        sourceSearchJob = viewModelScope.launch {
+            val result = searchVm.search(kw, type, source)
+            if (_ui.value.musicSource != source) return@launch
             searchOffset = result.songs.size + result.artists.size + result.albums.size
             _ui.value = _ui.value.copy(
                 results = result.songs,
@@ -496,14 +524,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 searching = false,
                 hasMore = result.hasMore
             )
+            result.error?.let(::toast)
         }
     }
 
     fun loadMoreSearch() {
         if (searchLoading || !_ui.value.hasMore || searchKeyword.isEmpty()) return
         searchLoading = true
-        viewModelScope.launch {
-            val result = searchVm.loadMore(_ui.value.searchType, _ui.value.musicSource, _ui.value.hasMore)
+        val source = _ui.value.musicSource
+        sourceSearchJob = viewModelScope.launch {
+            val result = searchVm.loadMore(_ui.value.searchType, source, _ui.value.hasMore)
+            if (_ui.value.musicSource != source) return@launch
             searchOffset += result.songs.size + result.artists.size + result.albums.size
             _ui.value = _ui.value.copy(
                 results = _ui.value.results + result.songs,
@@ -512,6 +543,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 hasMore = result.hasMore
             )
             searchLoading = false
+            result.error?.let(::toast)
         }
     }
 
@@ -535,8 +567,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun loadRecommend() {
         if (_ui.value.recLoading) return
         _ui.value = _ui.value.copy(recLoading = true)
-        viewModelScope.launch {
-            val result = searchVm.loadRecommendations(_ui.value.musicSource)
+        val source = _ui.value.musicSource
+        recommendationJob = viewModelScope.launch {
+            val result = searchVm.loadRecommendations(source)
+            if (_ui.value.musicSource != source) return@launch
             _ui.value = _ui.value.copy(
                 recPlaylists = result.playlists,
                 recSongs = result.songs,

@@ -5,17 +5,26 @@ import 'dart:ui' show ImageFilter;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../domain/library.dart';
+import '../dynamic_lyrics.dart';
 import '../domain/online_music.dart';
 import '../data/native_music_catalog.dart';
+import '../data/library_store.dart';
 import '../playback/playback_engine.dart';
 import '../player_controller.dart';
 import '../search_controller.dart' as online;
 import 'neko_theme.dart';
+import 'timed_lyric_text.dart';
+import 'playback_options.dart';
+import 'playlist_picker.dart';
+import 'rotating_record.dart';
 import 'online_search_page.dart';
 import 'accounts_panel.dart';
 import 'downloads_page.dart';
+import 'download_quality_dialog.dart';
 import 'site_panel.dart';
 import 'music_videos_page.dart';
 import 'comments_page.dart';
@@ -34,6 +43,7 @@ import 'audio_cache_page.dart';
 import '../appearance_controller.dart';
 import 'appearance_page.dart';
 import 'player_background.dart';
+import 'plugin_subscriptions_page.dart';
 
 class NekoApp extends StatefulWidget {
   const NekoApp({super.key, required this.controller});
@@ -57,6 +67,7 @@ class _NekoAppState extends State<NekoApp> {
     appearance.dispose();
     final source = widget.controller.onlineSource;
     if (source is NativeMusicCatalog) source.cache?.dispose();
+    if (source is NativeMusicCatalog) source.subscriptions?.dispose();
     widget.controller.dispose();
     super.dispose();
   }
@@ -134,6 +145,17 @@ class PlayerShell extends StatefulWidget {
 }
 
 class _PlayerShellState extends State<PlayerShell> {
+  late final dynamicLyrics = DynamicLyricsServer(
+    snapshot: () => dynamicLyricsSnapshot(
+      track: controller.current,
+      lyrics: controller.lyrics,
+      position: controller.position,
+      duration: controller.duration,
+      playing: controller.engine.playing,
+      rate: controller.rate,
+      showTranslation: controller.showTranslation,
+    ),
+  );
   late final NativeMusicCatalog catalog;
   late final online.SearchController onlineSearch;
   late final SiteController site;
@@ -146,15 +168,31 @@ class _PlayerShellState extends State<PlayerShell> {
         ? widget.controller.onlineSource as NativeMusicCatalog
         : NativeMusicCatalog();
     onlineSearch = online.SearchController(catalog);
+    catalog.subscriptions?.addListener(subscriptionChanged);
     site = SiteController(
       accounts: catalog.accounts,
       player: widget.controller,
     );
-    integration = DesktopIntegration(widget.controller);
+    integration = DesktopIntegration(
+      widget.controller,
+      settingsLoader: () async =>
+          PreferencesDesktopStore(SharedPreferencesAsync()),
+    );
     unawaited(integration.initialize());
   }
 
   int destination = 0;
+
+  void subscriptionChanged() {
+    final selected = onlineSearch.pluginSource;
+    if (selected != null &&
+        !catalog.subscriptions!.sources.any(
+          (source) => source.id == selected.id,
+        )) {
+      onlineSearch.selectProvider(MusicProvider.netease);
+    }
+  }
+
   String query = '';
   String filter = '全部音乐';
   String? playlistId;
@@ -173,7 +211,9 @@ class _PlayerShellState extends State<PlayerShell> {
 
   @override
   void dispose() {
+    unawaited(dynamicLyrics.dispose());
     integration.dispose();
+    catalog.subscriptions?.removeListener(subscriptionChanged);
     onlineSearch.dispose();
     site.dispose();
     super.dispose();
@@ -227,38 +267,40 @@ class _PlayerShellState extends State<PlayerShell> {
     final downloads = controller.downloads;
     if (downloads == null) return;
     try {
-      final qualities = song.provider.gateway != null
-          ? ['128k', '320k', 'flac', 'hires']
-          : song.provider == MusicProvider.kugou
-          ? NativeMusicCatalog.kgLevels
-          : NativeMusicCatalog.levels;
+      final session = AccountMusicRepository(catalog).sessionKey;
+      final siteToken = catalog.accounts.siteToken;
+      void checkSession() {
+        if (session != AccountMusicRepository(catalog).sessionKey ||
+            siteToken != catalog.accounts.siteToken) {
+          throw const MusicSearchException('账号已切换，请重新选择歌曲并检查音质。');
+        }
+      }
+
       final quality = await showDialog<String>(
         context: context,
-        builder: (context) => SimpleDialog(
-          title: const Text('选择下载音质'),
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Text('可下载音质由平台独立核验；不支持时会报错，不会用试听或低音质冒充。'),
-            ),
-            for (final quality in qualities)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, quality),
-                child: Text(quality),
-              ),
-          ],
+        builder: (context) => DownloadQualityDialog(
+          load: (accept) => catalog.downloadable(song, accept: accept),
+          requiresConfirmation: song.provider.gateway != null,
         ),
       );
       if (!mounted || quality == null) return;
+      checkSession();
       final directory =
           AppearanceScope.maybeOf(context)?.downloadDirectory ??
           await getDirectoryPath(confirmButtonText: '下载到此文件夹');
       if (!mounted || directory == null) return;
+      checkSession();
       await downloads.enqueue(song, directory, quality);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(downloads.error ?? '已加入下载队列；可在设置中查看下载管理。')),
       );
+    } on MusicSearchException catch (failure) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(failure.message)));
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -309,10 +351,32 @@ class _PlayerShellState extends State<PlayerShell> {
     unawaited(
       showDialog<void>(
         context: context,
-        builder: (context) =>
-            Dialog.fullscreen(child: FullPlayer(controller: controller)),
+        builder: (context) => Dialog.fullscreen(
+          child: FullPlayer(
+            controller: controller,
+            onDynamicLyrics: openDynamicLyrics,
+            onComments: openComments,
+            onDownload: controller.downloads == null
+                ? null
+                : (song) => unawaited(downloadSong(song)),
+          ),
+        ),
       ),
     );
+  }
+
+  Future<void> openDynamicLyrics() async {
+    try {
+      final uri = await dynamicLyrics.start();
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw StateError('无法打开浏览器');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法打开动态歌词窗口，请检查默认浏览器。原歌词仍可使用。')),
+      );
+    }
   }
 
   @override
@@ -328,12 +392,12 @@ class _PlayerShellState extends State<PlayerShell> {
           LogicalKeyboardKey.arrowRight,
           control: true,
         ): () =>
-            unawaited(controller.perform(controller.engine.next)),
+            unawaited(controller.next()),
         const SingleActivator(
           LogicalKeyboardKey.arrowLeft,
           control: true,
         ): () =>
-            unawaited(controller.perform(controller.engine.previous)),
+            unawaited(controller.previous()),
       },
       child: Focus(
         autofocus: true,
@@ -404,9 +468,35 @@ class _PlayerShellState extends State<PlayerShell> {
                                       2 => playlistPage(context),
                                       3 => OnlineSearchPage(
                                         controller: onlineSearch,
+                                        subscriptions: catalog.subscriptions,
+                                        onSubscriptions:
+                                            catalog.subscriptions == null
+                                            ? null
+                                            : () => Navigator.of(context).push(
+                                                MaterialPageRoute<void>(
+                                                  builder: (_) =>
+                                                      PluginSubscriptionsPage(
+                                                        subscriptions: catalog
+                                                            .subscriptions!,
+                                                      ),
+                                                ),
+                                              ),
                                         onEnqueue: (song) => controller.enqueue(
                                           Track.fromOnline(song),
                                         ),
+                                        onFavorite: (song) =>
+                                            controller.toggleFavorite(
+                                              Track.fromOnline(song),
+                                            ),
+                                        isFavorite: (song) => controller
+                                            .favorites
+                                            .contains(song.key),
+                                        onPlaylist: (song) =>
+                                            showPlaylistPicker(
+                                              context,
+                                              controller,
+                                              Track.fromOnline(song),
+                                            ),
                                         onBrowse: () =>
                                             Navigator.of(context).push(
                                               MaterialPageRoute<void>(
@@ -417,6 +507,13 @@ class _PlayerShellState extends State<PlayerShell> {
                                                       ),
                                                   player: controller,
                                                   onComments: openComments,
+                                                  onDownload:
+                                                      controller.downloads ==
+                                                          null
+                                                      ? null
+                                                      : (song) => unawaited(
+                                                          downloadSong(song),
+                                                        ),
                                                 ),
                                               ),
                                             ),
@@ -430,6 +527,13 @@ class _PlayerShellState extends State<PlayerShell> {
                                                       ),
                                                   player: controller,
                                                   onComments: openComments,
+                                                  onDownload:
+                                                      controller.downloads ==
+                                                          null
+                                                      ? null
+                                                      : (song) => unawaited(
+                                                          downloadSong(song),
+                                                        ),
                                                 ),
                                               ),
                                             ),
@@ -441,10 +545,7 @@ class _PlayerShellState extends State<PlayerShell> {
                                                   provider:
                                                       onlineSearch.provider,
                                                   volume: controller.volume,
-                                                  pauseMusic: () =>
-                                                      controller.perform(
-                                                        controller.engine.pause,
-                                                      ),
+                                                  pauseMusic: controller.pause,
                                                 ),
                                               ),
                                             ),
@@ -885,12 +986,24 @@ class _PlayerShellState extends State<PlayerShell> {
               unawaited(controller.moveInQueue(queueIndex, queueIndex + 1));
             } else if (value == 'remove' && inPlaylist != null) {
               controller.removeFromPlaylist(inPlaylist, track);
+            } else if (value == 'song-download' && track.online != null) {
+              unawaited(downloadSong(track.online!));
+            } else if (value == 'song-comments' && track.online != null) {
+              openComments(track.online!);
             } else {
               controller.addToPlaylist(value, track);
             }
           },
           itemBuilder: (context) => [
             const PopupMenuItem(value: 'queue-add', child: Text('加入播放队列')),
+            if (track.online != null) ...[
+              const PopupMenuItem(value: 'song-comments', child: Text('查看评论')),
+              if (controller.downloads != null)
+                const PopupMenuItem(
+                  value: 'song-download',
+                  child: Text('下载歌曲'),
+                ),
+            ],
             if (queueIndex != null) ...[
               const PopupMenuItem(value: 'queue-remove', child: Text('从队列移除')),
               PopupMenuItem(
@@ -1109,7 +1222,7 @@ class _PlayerShellState extends State<PlayerShell> {
         ),
       ),
       const SizedBox(height: 16),
-      SitePanel(controller: site, gateway: catalog.gateway),
+      SitePanel(controller: site),
       const SizedBox(height: 16),
       Card(
         child: ListTile(
@@ -1141,7 +1254,8 @@ class _PlayerShellState extends State<PlayerShell> {
               MaterialPageRoute<void>(
                 builder: (_) => DownloadsPage(
                   controller: controller.downloads!,
-                  onImport: (path) => controller.importFiles([path]),
+                  onImport: (task) => controller.importDownload(task),
+                  onPlay: (task) => controller.importDownload(task, play: true),
                 ),
               ),
             ),
@@ -1249,6 +1363,12 @@ class _PlayerShellState extends State<PlayerShell> {
             ],
           ),
         ),
+      ),
+      ListTile(
+        leading: const Icon(Icons.description_outlined),
+        title: const Text('开源许可'),
+        onTap: () =>
+            showLicensePage(context: context, applicationName: 'NekoPlayer'),
       ),
     ],
   );
@@ -1493,9 +1613,7 @@ class PlaybackControls extends StatelessWidget {
       if (!compact)
         IconButton(
           tooltip: '上一首',
-          onPressed: controller.current == null
-              ? null
-              : () => controller.perform(controller.engine.previous),
+          onPressed: controller.current == null ? null : controller.previous,
           icon: const Icon(Icons.skip_previous_rounded),
         ),
       IconButton.filled(
@@ -1509,9 +1627,7 @@ class PlaybackControls extends StatelessWidget {
       ),
       IconButton(
         tooltip: '下一首',
-        onPressed: controller.current == null
-            ? null
-            : () => controller.perform(controller.engine.next),
+        onPressed: controller.current == null ? null : controller.next,
         icon: const Icon(Icons.skip_next_rounded),
       ),
     ],
@@ -1532,15 +1648,14 @@ class _SeekBarState extends State<SeekBar> {
 
   @override
   Widget build(BuildContext context) {
-    final engine = widget.controller.engine;
-    final maximum = engine.duration.inMilliseconds.toDouble().clamp(
-      1.0,
-      double.maxFinite,
-    );
-    final value = (dragging ?? engine.position.inMilliseconds.toDouble()).clamp(
-      0.0,
-      maximum,
-    );
+    final controller = widget.controller;
+    final maximum =
+        (controller.sessionPending ? controller.position : controller.duration)
+            .inMilliseconds
+            .toDouble()
+            .clamp(1.0, double.maxFinite);
+    final value = (dragging ?? controller.position.inMilliseconds.toDouble())
+        .clamp(0.0, maximum);
     return Row(
       children: [
         if (widget.showClock)
@@ -1556,22 +1671,18 @@ class _SeekBarState extends State<SeekBar> {
                 clock(Duration(milliseconds: value.round())),
             onChanged:
                 widget.controller.current == null ||
-                    engine.duration == Duration.zero
+                    controller.duration == Duration.zero
                 ? null
                 : (value) => setState(() => dragging = value),
             onChangeEnd: (value) {
-              unawaited(
-                widget.controller.perform(
-                  () => engine.seek(Duration(milliseconds: value.round())),
-                ),
-              );
+              unawaited(controller.seek(Duration(milliseconds: value.round())));
               setState(() => dragging = null);
             },
           ),
         ),
         if (widget.showClock)
           Text(
-            clock(engine.duration),
+            controller.sessionPending ? '--:--' : clock(controller.duration),
             style: Theme.of(context).textTheme.labelSmall,
           ),
       ],
@@ -1580,8 +1691,17 @@ class _SeekBarState extends State<SeekBar> {
 }
 
 class FullPlayer extends StatefulWidget {
-  const FullPlayer({super.key, required this.controller});
+  const FullPlayer({
+    super.key,
+    required this.controller,
+    this.onDownload,
+    this.onComments,
+    this.onDynamicLyrics,
+  });
   final PlayerController controller;
+  final void Function(OnlineSong)? onDownload;
+  final void Function(OnlineSong)? onComments;
+  final Future<void> Function()? onDynamicLyrics;
 
   @override
   State<FullPlayer> createState() => _FullPlayerState();
@@ -1590,17 +1710,31 @@ class FullPlayer extends StatefulWidget {
 class _FullPlayerState extends State<FullPlayer> {
   final scroll = ScrollController();
   int activeLine = -1;
+  PlaybackView view = PlaybackView.split;
+
+  void selectView(PlaybackView value) {
+    setState(() {
+      view = value;
+      activeLine = -1;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) update();
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(update);
     widget.controller.engine.addListener(update);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) update();
+    });
   }
 
   void update() {
     final index = widget.controller.lyricIndex;
-    if (index == activeLine) return;
+    if (index == activeLine || !scroll.hasClients) return;
     activeLine = index;
     if (index >= 0 && scroll.hasClients) {
       unawaited(
@@ -1646,6 +1780,29 @@ class _FullPlayerState extends State<FullPlayer> {
               ),
               title: const Text('正在播放'),
               actions: [
+                if (widget.onDynamicLyrics != null)
+                  IconButton(
+                    tooltip: '动态歌词窗口（浏览器）',
+                    onPressed: widget.onDynamicLyrics,
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                  ),
+                PlaybackOptionsButton(
+                  controller: controller,
+                  view: view,
+                  onViewChanged: selectView,
+                ),
+                if (track?.online != null && widget.onComments != null)
+                  IconButton(
+                    tooltip: '查看评论',
+                    onPressed: () => widget.onComments!(track!.online!),
+                    icon: const Icon(Icons.comment_outlined),
+                  ),
+                if (track?.online != null && widget.onDownload != null)
+                  IconButton(
+                    tooltip: '下载歌曲',
+                    onPressed: () => widget.onDownload!(track!.online!),
+                    icon: const Icon(Icons.download_outlined),
+                  ),
                 if (track != null)
                   IconButton(
                     tooltip: controller.favorites.contains(track.path)
@@ -1673,34 +1830,19 @@ class _FullPlayerState extends State<FullPlayer> {
                         itemExtent: 80,
                         itemCount: controller.lyrics.length,
                         itemBuilder: (context, index) => InkWell(
-                          onTap: () => controller.perform(
-                            () => controller.engine.seek(
-                              controller.lyrics[index].time,
-                            ),
-                          ),
+                          onTap: () =>
+                              controller.seek(controller.lyrics[index].time),
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 24,
                               ),
-                              child: Text(
-                                '${controller.lyrics[index].text}${controller.showTranslation && controller.lyrics[index].translation.isNotEmpty ? '\n${controller.lyrics[index].translation}' : ''}',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(
-                                      fontWeight: index == controller.lyricIndex
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                      color: index == controller.lyricIndex
-                                          ? Theme.of(
-                                              context,
-                                            ).colorScheme.primary
-                                          : Theme.of(
-                                              context,
-                                            ).colorScheme.onSurfaceVariant,
-                                    ),
+                              child: TimedLyricText(
+                                line: controller.lyrics[index],
+                                position: controller.position,
+                                active: index == controller.lyricIndex,
+                                showTranslation: controller.showTranslation,
                               ),
                             ),
                           ),
@@ -1711,7 +1853,13 @@ class _FullPlayerState extends State<FullPlayer> {
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       children: [
-                        Artwork(size: 180, track: track),
+                        if (view == PlaybackView.record)
+                          RotatingRecord(
+                            playing: controller.engine.playing,
+                            child: Artwork(size: 180, track: track),
+                          )
+                        else
+                          Artwork(size: 180, track: track),
                         const SizedBox(height: 24),
                         Text(
                           track?.title ?? '尚未播放',
@@ -1727,6 +1875,27 @@ class _FullPlayerState extends State<FullPlayer> {
                     ),
                   ),
                 );
+                if (view == PlaybackView.record) return Center(child: detail);
+                if (view == PlaybackView.lyrics) {
+                  return Column(
+                    children: [
+                      Expanded(child: lyrics),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SeekBar(controller: controller),
+                            PlaybackControls(controller: controller),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
                 return constraints.maxWidth >= 840
                     ? Row(
                         children: [

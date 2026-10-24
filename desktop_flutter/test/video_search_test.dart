@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nekoplayer_desktop/data/account_store.dart';
+import 'package:nekoplayer_desktop/data/builtin_music_plugin.dart';
 import 'package:nekoplayer_desktop/data/native_music_catalog.dart';
-import 'package:nekoplayer_desktop/data/source_gateway.dart';
 import 'package:nekoplayer_desktop/domain/online_music.dart';
 import 'package:nekoplayer_desktop/ui/music_videos_page.dart';
 import 'package:nekoplayer_desktop/video_search_controller.dart';
@@ -48,26 +48,40 @@ void main() {
     },
   );
 
-  test('native and external MV routes use signed gateway endpoints', () async {
+  test('MV routes use the independent plugin without a site login', () async {
     final accounts = AccountStore();
-    await accounts.update(siteToken: 'site-token-valid-123');
-    final gateway = SourceGateway(
-      accounts: accounts,
+    addTearDown(accounts.dispose);
+    const routes = {
+      MusicProvider.netease: ['wy', '1080'],
+      MusicProvider.kugou: ['kg', ''],
+      MusicProvider.gatewayKugou: ['kg', ''],
+      MusicProvider.gatewayKuwo: ['kw', 'MP4BD'],
+      MusicProvider.gatewayNetease: ['wy', '1080'],
+      MusicProvider.gatewayTencent: ['tx', '1080'],
+      MusicProvider.gatewayMigu: ['mg', ''],
+      MusicProvider.gatewayBilibili: ['bilibili', '80'],
+      MusicProvider.pluginQishui: ['qishui', '1080p'],
+    };
+    var platform = '';
+    var quality = '';
+    final requests = <CatalogRequest>[];
+    final plugin = BuiltinMusicPlugin(
       transport: (request) async {
-        if (request.uri.path.endsWith('/session')) {
-          return {
-            'key': List.filled(32, '01').join(),
-            'keyId': 'key',
-            'expires': DateTime.now().millisecondsSinceEpoch + 3600000,
-          };
-        }
-        final external = request.uri.path.startsWith('/api/music-source/');
+        requests.add(request);
+        expect(request.uri.scheme, 'https');
+        expect(request.uri.host, 'animemusic.bzxhkj.com');
+        expect(request.headers, {
+          'Accept': 'application/json',
+          'User-Agent': 'NekoPlayer/animemusic-1',
+        });
+        expect(request.body, isNull);
         final query = request.uri.queryParameters;
-        expect(
-          query[external ? 'platform' : 'source'],
-          external ? 'tx' : 'netease',
-        );
+        expect(query['platform'], platform);
         if (request.uri.path.endsWith('/search')) {
+          expect(request.uri.path, '/v1/index.php/music/mv/search');
+          expect(query['keyword'], '夜晚');
+          expect(query['page'], '1');
+          expect(query['limit'], '${NativeMusicCatalog.pageSize}');
           return {
             'code': 200,
             'isEnd': false,
@@ -76,48 +90,49 @@ void main() {
             ],
           };
         }
-        if (external) expect(query['quality'], '1080');
+        expect(request.uri.path, '/v1/index.php/music/mv/url');
+        expect(query['id'], 'video-id');
+        expect(query['quality'], quality);
         return {'code': 200, 'url': 'https://video.example/music.mp4'};
       },
     );
-    final catalog = NativeMusicCatalog(
-      accounts: accounts,
-      sourceGateway: gateway,
-    );
-    for (final provider in [
-      MusicProvider.netease,
-      MusicProvider.gatewayTencent,
-    ]) {
+    final catalog = NativeMusicCatalog(accounts: accounts, musicPlugin: plugin);
+    expect(accounts.siteToken, isEmpty);
+    for (final entry in routes.entries) {
+      final provider = entry.key;
+      platform = entry.value[0];
+      quality = entry.value[1];
       final result = await catalog.searchVideos(provider, '夜晚', 1);
       expect(result.videos.single.id, 'video-id');
+      expect(result.videos.single.provider, provider);
       expect(result.hasMore, isTrue);
       expect((await catalog.videoUrl(result.videos.single)).scheme, 'https');
     }
+    expect(requests, hasLength(routes.length * 2));
   });
 
   test('invalid video URLs never reach the playback engine', () async {
-    final accounts = AccountStore();
-    await accounts.update(siteToken: 'site-token-valid-123');
-    final catalog = NativeMusicCatalog(
-      accounts: accounts,
-      sourceGateway: SourceGateway(
-        accounts: accounts,
-        transport: (request) async {
-          if (request.uri.path.endsWith('/session')) {
-            return {
-              'key': List.filled(32, '01').join(),
-              'keyId': 'key',
-              'expires': DateTime.now().millisecondsSinceEpoch + 3600000,
-            };
-          }
-          return {'code': 200, 'url': 'file:///etc/passwd'};
-        },
-      ),
-    );
-    await expectLater(
-      catalog.videoUrl(video('1')),
-      throwsA(isA<MusicSearchException>()),
-    );
+    for (final url in [
+      'file:///etc/passwd',
+      'javascript:alert(1)',
+      '/music.mp4',
+      'https://user:password@video.example/music.mp4',
+    ]) {
+      var calls = 0;
+      final catalog = NativeMusicCatalog(
+        musicPlugin: BuiltinMusicPlugin(
+          transport: (_) async {
+            calls++;
+            return {'code': 200, 'url': url};
+          },
+        ),
+      );
+      await expectLater(
+        catalog.videoUrl(video('1')),
+        throwsA(isA<MusicSearchException>()),
+      );
+      expect(calls, 1);
+    }
   });
 
   testWidgets(
@@ -126,7 +141,25 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(360, 640));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final accounts = AccountStore();
-      final catalog = NativeMusicCatalog(accounts: accounts);
+      addTearDown(accounts.dispose);
+      var calls = 0;
+      final catalog = NativeMusicCatalog(
+        accounts: accounts,
+        musicPlugin: BuiltinMusicPlugin(
+          transport: (request) async {
+            calls++;
+            expect(request.uri.path, '/v1/index.php/music/mv/search');
+            expect(request.uri.queryParameters['keyword'], '夜晚');
+            return {
+              'code': 200,
+              'isEnd': true,
+              'data': [
+                {'id': 'video-id', 'title': 'MV 夜晚', 'artist': 'Neko'},
+              ],
+            };
+          },
+        ),
+      );
       await tester.pumpWidget(
         MaterialApp(
           home: MusicVideosPage(catalog: catalog, pauseMusic: () async {}),
@@ -136,7 +169,10 @@ void main() {
       await tester.enterText(find.byType(TextField), '夜晚');
       await tester.tap(find.byTooltip('搜索 MV'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('请先登录本站账号'), findsOneWidget);
+      expect(accounts.siteToken, isEmpty);
+      expect(calls, 1);
+      expect(find.text('MV 夜晚'), findsOneWidget);
+      expect(find.text('Neko'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

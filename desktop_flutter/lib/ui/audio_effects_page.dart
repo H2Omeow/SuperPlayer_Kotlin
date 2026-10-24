@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/audio_effects.dart';
+import '../domain/mastering_presets.dart';
 import '../playback/effects_playback_engine.dart';
 
 class AudioEffectsPage extends StatelessWidget {
@@ -34,6 +35,7 @@ class AudioEffectsPage extends StatelessWidget {
       animation: engine,
       builder: (context, _) {
         final settings = engine.effects;
+        final mastering = MasteringPreset.find(settings.mastering);
         return Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 820),
@@ -45,7 +47,7 @@ class AudioEffectsPage extends StatelessWidget {
                   title: const Text('启用原版 C++ 专业音效'),
                   value: settings.enabled,
                   subtitle: const Text(
-                    '使用原版 DSP、48kHz 双声道 PCM 和系统音频设备；需要 FFmpeg / ffprobe。切换播放模式会重新解析当前音源。',
+                    '使用原版 DSP、48kHz 双声道 PCM 和系统音频设备；正式包随附 FFmpeg / ffprobe。切换播放模式会重新解析当前音源。',
                   ),
                   onChanged: engine.changing
                       ? null
@@ -145,10 +147,14 @@ class AudioEffectsPage extends StatelessWidget {
                   decoration: const InputDecoration(labelText: '母带处理链'),
                   items: [
                     const DropdownMenuItem(value: 0, child: Text('关闭')),
-                    for (var index = 15; index <= 34; index++)
+                    for (final preset in MasteringPreset.available)
                       DropdownMenuItem(
-                        value: index,
-                        child: Text('原版母带 #$index'),
+                        value: preset.id,
+                        child: Text(
+                          preset.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                   ],
                   onChanged: engine.changing
@@ -161,6 +167,13 @@ class AudioEffectsPage extends StatelessWidget {
                           }
                         },
                 ),
+                if (mastering != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      '${mastering.group} · ${mastering.description}',
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 slider(
                   '母带混合',

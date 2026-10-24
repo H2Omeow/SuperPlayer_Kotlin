@@ -7,9 +7,11 @@ class DownloadsPage extends StatelessWidget {
     super.key,
     required this.controller,
     required this.onImport,
+    required this.onPlay,
   });
   final DownloadController controller;
-  final Future<void> Function(String path) onImport;
+  final Future<void> Function(DownloadTask task) onImport;
+  final Future<void> Function(DownloadTask task) onPlay;
 
   Future<void> deleteFiles(BuildContext context, DownloadTask task) async {
     final confirm = await showDialog<bool>(
@@ -131,8 +133,15 @@ class DownloadsPage extends StatelessWidget {
                                     ),
                                   if (task.phase == DownloadPhase.completed &&
                                       task.path != null)
+                                    FilledButton.tonalIcon(
+                                      onPressed: () => onPlay(task),
+                                      icon: const Icon(Icons.play_arrow),
+                                      label: const Text('播放下载'),
+                                    ),
+                                  if (task.phase == DownloadPhase.completed &&
+                                      task.path != null)
                                     TextButton(
-                                      onPressed: () => onImport(task.path!),
+                                      onPressed: () => onImport(task),
                                       child: const Text('加入音乐库'),
                                     ),
                                   if (task.phase == DownloadPhase.completed &&

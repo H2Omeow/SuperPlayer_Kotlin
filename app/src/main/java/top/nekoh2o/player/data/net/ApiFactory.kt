@@ -18,7 +18,7 @@ object ApiFactory {
 
     const val BASE = "https://player.nekoh2o.top/"
     const val PLAYER_HOST = "player.nekoh2o.top"
-    const val ANIMEMUSIC_BASE = "https://nekoh2o.top/api/music-source/"
+    const val ANIMEMUSIC_BASE = "https://animemusic.bzxhkj.com/v1/"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -103,16 +103,13 @@ object ApiFactory {
     }
 
     val nativeMusic: ProviderApi by lazy { retrofit(BASE, nativeNetease).create(ProviderApi::class.java) }
-    val mv: top.nekoh2o.player.data.repo.MvApi by lazy {
-        val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build()
-        val signed = client.newBuilder().addInterceptor(SourceGatewayInterceptor(client, CookieStore::appTokenValue)).build()
-        retrofit("https://nekoh2o.top/api/media/", signed).create(top.nekoh2o.player.data.repo.MvApi::class.java)
-    }
     val animemusic: AnimemusicApi by lazy {
-        val publicClient = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).build()
-        val signedClient = publicClient.newBuilder().followRedirects(false)
-            .addInterceptor(SourceGatewayInterceptor(publicClient, CookieStore::appTokenValue)).build()
-        retrofit(ANIMEMUSIC_BASE, signedClient).create(AnimemusicApi::class.java)
+        val pluginClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS)
+            .callTimeout(30, TimeUnit.SECONDS).followRedirects(false)
+            .cookieJar(okhttp3.CookieJar.NO_COOKIES)
+            .build()
+        retrofit(ANIMEMUSIC_BASE, pluginClient).create(AnimemusicApi::class.java)
     }
     fun client(): OkHttpClient = httpClient
 }

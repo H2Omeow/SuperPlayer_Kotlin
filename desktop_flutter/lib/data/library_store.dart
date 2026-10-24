@@ -37,3 +37,33 @@ class PreferencesCacheStore implements LibraryStore {
   @override
   Future<void> write(String value) => preferences.setString(key, value);
 }
+
+class PreferencesDesktopStore implements LibraryStore {
+  PreferencesDesktopStore(this.preferences);
+  final SharedPreferencesAsync preferences;
+  static const key = 'nekoplayer.flutter.desktop.v1';
+  @override
+  Future<String?> read() => preferences.getString(key);
+  @override
+  Future<void> write(String value) => preferences.setString(key, value);
+}
+
+class PreferencesPluginStore implements LibraryStore {
+  PreferencesPluginStore(this.preferences);
+  final SharedPreferencesAsync preferences;
+  static const key = 'nekoplayer.flutter.plugins.v1';
+  @override
+  Future<String?> read() => preferences.getString(key);
+  @override
+  Future<void> write(String value) => preferences.setString(key, value);
+}
+
+class PreferencesPluginStorage implements LibraryStore {
+  PreferencesPluginStorage(this.preferences);
+  final SharedPreferencesAsync preferences;
+  static const key = 'nekoplayer.flutter.plugin-storage.v1';
+  @override
+  Future<String?> read() => preferences.getString(key);
+  @override
+  Future<void> write(String value) => preferences.setString(key, value);
+}

@@ -1,21 +1,18 @@
 package top.nekoh2o.player.data.net
 
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
 import retrofit2.http.GET
 import retrofit2.http.Query
 
 interface AnimemusicApi {
-    @GET("usage")
-    suspend fun usage(): SourceUsage
-
-    @GET("music/mv/search")
+    @GET("index.php?route=music/mv/search")
     suspend fun mvSearch(@Query("platform") platform: String, @Query("keyword") keyword: String,
         @Query("page") page: Int = 1, @Query("limit") limit: Int = 30): AnimemusicSearchResponse
 
-    @GET("music/mv/url")
+    @GET("index.php?route=music/mv/url")
     suspend fun mvUrl(@Query("platform") platform: String, @Query("id") id: String,
         @Query("quality") quality: String): AnimemusicUrlResponse
-    @GET("music/search")
+    @GET("index.php?route=music/search")
     suspend fun search(
         @Query("platform") platform: String,
         @Query("keyword") keyword: String,
@@ -23,26 +20,29 @@ interface AnimemusicApi {
         @Query("limit") limit: Int = 30
     ): AnimemusicSearchResponse
 
-    @GET("music/url")
+    @GET("index.php?route=music/url")
     suspend fun url(
         @Query("source") source: String,
         @Query("musicId") musicId: String,
         @Query("quality") quality: String
     ): AnimemusicUrlResponse
 
-    @GET("music/lyric")
+    @GET("index.php?route=music/lyric")
     suspend fun lyric(
-        @Query("source") source: String,
-        @Query("musicId") musicId: String
+        @Query("platform") platform: String,
+        @Query("musicId") musicId: String,
+        @Query("name") name: String = "",
+        @Query("interval") interval: Int = 200
+    ): AnimemusicLyricResponse
+
+    @GET("index.php?route=music/lyric/word")
+    suspend fun lyricWord(
+        @Query("platform") platform: String,
+        @Query("musicId") musicId: String,
+        @Query("name") name: String = "",
+        @Query("interval") interval: Int = 200
     ): AnimemusicLyricResponse
 }
-
-@kotlinx.serialization.Serializable
-data class SourceUsage(val code: Int = 0, val date: String = "", val limit: Int = 10000,
-    val used: Int = 0, val remaining: Int = 0, val myToday: Int = 0, val users: List<SourceUserUsage> = emptyList())
-
-@kotlinx.serialization.Serializable
-data class SourceUserUsage(val name: String = "", val today: Int = 0, val total: Int = 0)
 
 @kotlinx.serialization.Serializable
 data class AnimemusicSearchResponse(
@@ -69,7 +69,11 @@ data class AnimemusicSong(
 data class AnimemusicUrlResponse(
     val code: Int = 0,
     val url: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    val quality: String = "",
+    val size: Long = 0,
+    val freeTrialInfo: JsonElement? = null,
+    val is_free_part: Int = 0
 )
 
 @kotlinx.serialization.Serializable

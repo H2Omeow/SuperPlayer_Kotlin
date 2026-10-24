@@ -5,10 +5,15 @@ import '../domain/online_music.dart';
 import 'playback_engine.dart' show RepeatMode;
 
 class ResolvingQueue {
-  ResolvingQueue({required this.load, this.source, Random? random})
-    : random = random ?? Random();
+  ResolvingQueue({
+    required this.load,
+    this.loadAudio,
+    this.source,
+    Random? random,
+  }) : random = random ?? Random();
 
   final Future<void> Function(Uri uri) load;
+  final Future<void> Function(ResolvedAudio audio)? loadAudio;
   final OnlineAudioSource? source;
   final Random random;
   List<Track> _tracks = [];
@@ -63,12 +68,13 @@ class ResolvingQueue {
     if (track.online != null && source == null) {
       throw const MusicSearchException('在线播放服务未初始化。');
     }
-    final uri = track.online == null
-        ? Uri.file(track.path)
-        : (await source!.resolve(
-            track.online!,
-            preferred: preferredQuality,
-          )).uri;
-    await load(uri);
+    final audio = track.online == null
+        ? ResolvedAudio(Uri.file(track.path), '')
+        : await source!.resolve(track.online!, preferred: preferredQuality);
+    if (loadAudio != null) {
+      await loadAudio!(audio);
+    } else {
+      await load(audio.uri);
+    }
   }
 }

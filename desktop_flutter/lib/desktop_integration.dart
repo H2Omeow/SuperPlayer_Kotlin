@@ -6,13 +6,20 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'playback/playback_engine.dart';
+import 'data/library_store.dart';
 import 'player_controller.dart';
 
 class DesktopIntegration extends ChangeNotifier {
-  DesktopIntegration(this.player, {MethodChannel? channel})
-    : channel = channel ?? const MethodChannel('top.nekoh2o/desktop');
+  DesktopIntegration(
+    this.player, {
+    MethodChannel? channel,
+    this.settings,
+    this.settingsLoader,
+  }) : channel = channel ?? const MethodChannel('top.nekoh2o/desktop');
   final PlayerController player;
   final MethodChannel channel;
+  LibraryStore? settings;
+  final Future<LibraryStore?> Function()? settingsLoader;
   bool mediaAvailable = false;
   bool lyricsAvailable = false;
   bool positioningAvailable = false;
@@ -27,9 +34,62 @@ class DesktopIntegration extends ChangeNotifier {
   bool _sending = false;
   bool _dirty = false;
   String? _signature;
+  bool _settingsReadable = true;
+  Future<void> _writes = Future.value();
+  Future<void> get flushed => _writes;
+
+  Future<void> _readSettings() async {
+    try {
+      final raw = await settings?.read();
+      if (raw == null || _disposed) return;
+      final value = jsonDecode(raw);
+      if (value is! Map ||
+          value['version'] != 1 ||
+          value['overlay'] is! bool ||
+          value['locked'] is! bool ||
+          value['fontSize'] is! num ||
+          value['opacity'] is! num) {
+        throw const FormatException();
+      }
+      final size = (value['fontSize'] as num).toDouble();
+      final alpha = (value['opacity'] as num).toDouble();
+      if (!size.isFinite || !alpha.isFinite) throw const FormatException();
+      overlay = value['overlay'] as bool;
+      locked = value['locked'] as bool;
+      fontSize = size.clamp(18, 64);
+      opacity = alpha.clamp(.25, 1);
+    } catch (_) {
+      _settingsReadable = false;
+      error = '桌面歌词设置读取失败，已保留原数据；本次修改不会覆盖它。';
+    }
+  }
+
+  void _saveSettings() {
+    final store = settings;
+    if (store == null || !_settingsReadable || _disposed) return;
+    final encoded = jsonEncode({
+      'version': 1,
+      'overlay': overlay,
+      'locked': locked,
+      'fontSize': fontSize,
+      'opacity': opacity,
+    });
+    _writes = _writes.then((_) => store.write(encoded)).catchError((Object _) {
+      if (_disposed) return;
+      error = '桌面歌词设置保存失败，请检查磁盘空间与访问权限。';
+      notifyListeners();
+    });
+  }
 
   Future<void> initialize() async {
     channel.setMethodCallHandler(_handle);
+    try {
+      settings ??= await settingsLoader?.call();
+    } catch (_) {
+      settings = null;
+    }
+    await _readSettings();
+    if (_disposed) return;
     try {
       final result = await channel.invokeMapMethod<String, dynamic>(
         'initialize',
@@ -61,42 +121,39 @@ class DesktopIntegration extends ChangeNotifier {
     }
     if (call.method == 'overlayClosed') {
       overlay = false;
+      _saveSettings();
+      _changed();
       notifyListeners();
       return;
     }
     if (call.method != 'action') return;
     switch (action) {
       case 'play':
-        if (!player.engine.playing) await player.toggle();
+        await player.resume();
       case 'pause':
-        await player.perform(player.engine.pause);
+        await player.pause();
       case 'toggle':
         await player.toggle();
       case 'next':
-        await player.perform(player.engine.next);
+        await player.next();
       case 'previous':
-        await player.perform(player.engine.previous);
+        await player.previous();
       case 'stop':
-        await player.perform(() async {
-          await player.engine.pause();
-          await player.engine.seek(Duration.zero);
-        });
+        await player.stop();
       case 'seek':
       case 'seekRelative':
         final value = arguments['value'];
         if (value is! num || !value.isFinite || player.current == null) return;
-        final duration = player.engine.duration.inMicroseconds;
+        final duration = player.duration.inMicroseconds;
         if (duration <= 0) return;
         final target =
             (value +
                     (action == 'seekRelative'
-                        ? player.engine.position.inMicroseconds
+                        ? player.position.inMicroseconds
                         : 0))
                 .round()
                 .clamp(0, duration);
-        await player.perform(
-          () => player.engine.seek(Duration(microseconds: target)),
-        );
+        await player.seek(Duration(microseconds: target));
       case 'volume':
         final value = arguments['value'];
         if (value is num && value.isFinite) {
@@ -135,6 +192,9 @@ class DesktopIntegration extends ChangeNotifier {
     locked = lock ?? locked;
     if (size != null && size.isFinite) fontSize = size.clamp(18, 64);
     if (alpha != null && alpha.isFinite) opacity = alpha.clamp(.25, 1);
+    if (enabled != null || lock != null || size != null || alpha != null) {
+      _saveSettings();
+    }
     _signature = null;
     _changed();
     notifyListeners();
@@ -168,8 +228,8 @@ class DesktopIntegration extends ChangeNotifier {
       'album': track?.online?.album ?? '',
       'playing': player.engine.playing,
       'hasTrack': track != null,
-      'position': player.engine.position.inMicroseconds,
-      'duration': player.engine.duration.inMicroseconds,
+      'position': player.position.inMicroseconds,
+      'duration': player.duration.inMicroseconds,
       'volume': player.volume / 100,
       'rate': player.rate,
       'loop': player.repeat == RepeatMode.single

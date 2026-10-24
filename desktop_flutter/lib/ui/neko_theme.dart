@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'bundled_fonts.dart';
+
 ThemeData nekoTheme({
   Brightness brightness = Brightness.dark,
   double controlAlpha = 1,
@@ -37,6 +39,7 @@ ThemeData nekoTheme({
         ? const Color(0xFF111116)
         : const Color(0xFFFCF7F9),
     fontFamilyFallback: const [
+      bundledCjkFamily,
       'Noto Sans CJK SC',
       'Microsoft YaHei',
       'sans-serif',

@@ -83,6 +83,56 @@ void main() {
     );
   });
 
+  test('Android XML preserves scalar types and rejects malformed values', () {
+    expect(
+      LegacyImport.androidPreferences(
+        '<map><boolean name="floating_double_row" value="false"/>'
+        '<int name="play_index" value="2"/>'
+        '<long name="play_position" value="4294967296"/>'
+        '<float name="playback_speed" value="1.5"/></map>',
+      ),
+      {
+        'floating_double_row': 'false',
+        'play_index': '2',
+        'play_position': '4294967296',
+        'playback_speed': '1.5',
+      },
+    );
+    for (final content in [
+      '<boolean name="x" value="yes"/>',
+      '<int name="x" value="1.5"/>',
+      '<int name="x" value="2147483648"/>',
+      '<int name="x" value="-2147483649"/>',
+      '<long name="x" value="missing"/>',
+      '<long name="x" value="9223372036854775808"/>',
+      '<float name="x" value="NaN"/>',
+      '<float name="x"/>',
+      '<boolean name="x" value="true">false</boolean>',
+      '<string name="x">first</string><int name="x" value="2"/>',
+    ]) {
+      expect(
+        () => LegacyImport.androidPreferences('<map>$content</map>'),
+        throwsFormatException,
+      );
+    }
+  });
+
+  test('playback import rejects malformed speed, quality and lyric flags', () {
+    for (final values in [
+      {'playback_speed': 'NaN'},
+      {'playback_speed': '2.5'},
+      {'playback_speed': 'invalid'},
+      {'audio_quality': '../path'},
+      {'floating_translation': 'yes'},
+      {'floating_double_row': '1'},
+    ]) {
+      expect(
+        () => LegacyPlaybackPreferences.parse(values),
+        throwsFormatException,
+      );
+    }
+  });
+
   group('explicit file import', () {
     late Directory directory;
     setUp(
@@ -96,6 +146,57 @@ void main() {
       await file.writeAsString(content);
       return file.path;
     }
+
+    test(
+      'settings import is explicit and does not require credentials',
+      () async {
+        final path = await write(
+          'settings.xml',
+          '<map><float name="playback_speed" value="1.5"/>'
+              '<string name="audio_quality">lossless</string>'
+              '<boolean name="floating_double_row" value="false"/>'
+              '<boolean name="floating_translation" value="true"/>'
+              '<string name="download_dir_uri">content://private/downloads</string>'
+              '<string name="nc_cookie">MUSIC_U=must-not-import</string></map>',
+        );
+        await expectLater(
+          LegacyImport.readFiles([path]),
+          throwsFormatException,
+        );
+        final imported = await LegacyImport.readFiles([
+          path,
+        ], includeSettings: true);
+        expect(imported.playback.count, 4);
+        expect(imported.playback.rate, 1.5);
+        expect(imported.playback.quality, 'lossless');
+        expect(imported.playback.twoLines, isFalse);
+        expect(imported.playback.translation, isTrue);
+        expect(imported.hasCredentials, isFalse);
+        expect(imported.library, isEmpty);
+      },
+    );
+
+    test('typed DataStore settings use the same import path', () async {
+      final file = File('${directory.path}/settings.preferences_pb');
+      await file.writeAsBytes([
+        for (final entry in {
+          'playback_speed': [21, 0, 0, 192, 63],
+          'floating_double_row': [8, 0],
+          'quality_level': _message(42, utf8.encode('hires')),
+        }.entries)
+          ..._message(10, [
+            ..._message(10, utf8.encode(entry.key)),
+            ..._message(18, entry.value),
+          ]),
+      ]);
+      final imported = await LegacyImport.readFiles([
+        file.path,
+      ], includeSettings: true);
+      expect(imported.playback.count, 3);
+      expect(imported.playback.rate, 1.5);
+      expect(imported.playback.twoLines, isFalse);
+      expect(imported.playback.quality, 'hires');
+    });
 
     test(
       'desktop library import never copies credentials unless opted in',

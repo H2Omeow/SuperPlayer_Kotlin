@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,13 @@ import 'fakes.dart';
 
 class SeekEngine extends FakeEngine {
   int nextCalls = 0;
+  int opens = 0;
+  @override
+  Future<void> open(List<Track> tracks, int index, {bool play = true}) async {
+    opens++;
+    await super.open(tracks, index, play: play);
+  }
+
   @override
   Future<void> next() async {
     nextCalls++;
@@ -80,6 +88,48 @@ void main() {
       ),
     ),
   ], 0);
+
+  test(
+    'system controls preserve a deferred selection without implicit decoding',
+    () async {
+      final tracks = [
+        for (final id in ['1', '2', '1'])
+          Track.fromOnline(
+            OnlineSong(
+              provider: MusicProvider.netease,
+              id: id,
+              title: 'Song $id',
+              artist: 'Neko',
+            ),
+          ),
+      ];
+      await player.importPlaybackQueue(
+        tracks,
+        PlaybackSession(
+          paths: tracks.map((track) => track.path).toList(),
+          index: 2,
+          position: const Duration(seconds: 23),
+        ),
+      );
+      expect(desktop.state()['title'], 'Song 1');
+      expect(desktop.state()['position'], 23000000);
+      expect(desktop.state()['duration'], 0);
+      expect(desktop.state()['hasTrack'], isTrue);
+      expect(desktop.state()['playing'], isFalse);
+      await send('action', {'action': 'pause'});
+      await send('action', {'action': 'seek', 'value': 10000000});
+      expect(player.position, const Duration(seconds: 23));
+      expect(engine.opens, 0);
+      await send('action', {'action': 'stop'});
+      expect(player.position, Duration.zero);
+      expect(engine.opens, 0);
+      await send('action', {'action': 'next'});
+      expect(engine.opens, 1);
+      expect(engine.nextCalls, 0);
+      expect(player.queueIndex, 0);
+      expect(engine.playing, isTrue);
+    },
+  );
 
   test(
     'close to tray requires explicit opt in and a live system tray',
@@ -182,6 +232,77 @@ void main() {
       expect(desktop.locked, isTrue);
       await send('overlayClosed');
       expect(desktop.overlay, isFalse);
+    },
+  );
+
+  test(
+    'desktop lyric settings survive restart while close-to-tray stays opt in',
+    () async {
+      desktop.dispose();
+      final settings = MemoryStore();
+      desktop = DesktopIntegration(
+        player,
+        channel: channel,
+        settings: settings,
+      );
+      await desktop.initialize();
+      desktop.configureOverlay(enabled: true, lock: true, size: 42, alpha: .6);
+      await desktop.configureTray(true);
+      await desktop.flushed;
+      expect(settings.value, isNot(contains('closeToTray')));
+      desktop.dispose();
+      desktop = DesktopIntegration(
+        player,
+        channel: channel,
+        settings: settings,
+      );
+      await desktop.initialize();
+      expect(desktop.overlay, isTrue);
+      expect(desktop.locked, isTrue);
+      expect(desktop.fontSize, 42);
+      expect(desktop.opacity, .6);
+      expect(desktop.closeToTray, isFalse);
+      await send('overlayClosed');
+      await desktop.flushed;
+      expect(jsonDecode(settings.value!)['overlay'], isFalse);
+    },
+  );
+
+  test('unreadable desktop settings remain protected from overwrite', () async {
+    desktop.dispose();
+    final settings = MemoryStore()..value = '{invalid';
+    desktop = DesktopIntegration(player, channel: channel, settings: settings);
+    await desktop.initialize();
+    expect(desktop.error, contains('读取失败'));
+    desktop.configureOverlay(enabled: true, size: 40);
+    await desktop.flushed;
+    expect(settings.value, '{invalid');
+    expect(settings.writes, 0);
+    expect(desktop.mediaAvailable, isTrue);
+  });
+
+  test(
+    'desktop setting writes recover after disk failure and preserve newest values',
+    () async {
+      desktop.dispose();
+      final settings = MemoryStore()..failWrite = true;
+      desktop = DesktopIntegration(
+        player,
+        channel: channel,
+        settings: settings,
+      );
+      await desktop.initialize();
+      desktop.configureOverlay(enabled: true);
+      await desktop.flushed;
+      expect(desktop.error, contains('保存失败'));
+      settings.failWrite = false;
+      desktop.configureOverlay(size: 40);
+      desktop.configureOverlay(size: 50, alpha: .5);
+      await desktop.flushed;
+      final saved = jsonDecode(settings.value!);
+      expect(saved['fontSize'], 50);
+      expect(saved['opacity'], .5);
+      expect(saved['overlay'], isTrue);
     },
   );
 }

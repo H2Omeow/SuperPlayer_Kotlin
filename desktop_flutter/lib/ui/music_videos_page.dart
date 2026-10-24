@@ -83,7 +83,7 @@ class _MusicVideosPageState extends State<MusicVideosPage> {
         builder: (context, _) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('MV 服务需要本站登录与有效配额。播放视频时暂停音乐。'),
+            const Text('内置 Animemusic 插件提供 MV，免本站登录。播放视频时暂停音乐。'),
             const SizedBox(height: 12),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,

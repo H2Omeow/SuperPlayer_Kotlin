@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nekoplayer_desktop/domain/library.dart';
+import 'package:nekoplayer_desktop/domain/online_music.dart';
+import 'package:nekoplayer_desktop/download_controller.dart';
 import 'package:nekoplayer_desktop/player_controller.dart';
 import 'package:nekoplayer_desktop/playback/playback_engine.dart';
 
@@ -29,6 +31,158 @@ void main() {
 
   Future<File> song([String name = 'Neko - 夜晚.FLAC']) =>
       File('${directory.path}/$name').writeAsString('fake-audio');
+
+  test('download import keeps song metadata without autoplay', () async {
+    final audio = await song('sanitized - task-123.flac');
+    final task = DownloadTask(
+      id: 'task-123',
+      song: const OnlineSong(
+        provider: MusicProvider.netease,
+        id: '123',
+        title: '夜晚 / 原曲名',
+        artist: 'Neko: 原歌手',
+      ),
+      directory: directory.path,
+      quality: 'lossless',
+      path: audio.path,
+      phase: DownloadPhase.completed,
+    );
+    await controller.importDownload(task);
+    expect(controller.tracks.single.title, task.song.title);
+    expect(controller.tracks.single.artist, task.song.artist);
+    expect(controller.tracks.single.online, isNull);
+    expect(controller.tracks.single.path, audio.path);
+    expect(engine.currentPath, isNull);
+    expect(controller.history, isEmpty);
+    await controller.importFiles([audio.path]);
+    expect(controller.tracks.single.title, task.song.title);
+    final saved = LibraryData.decode(store.value!);
+    expect(saved.tracks.single.title, task.song.title);
+  });
+
+  test(
+    'download plays locally with sidecar lyrics and saved session',
+    () async {
+      final audio = await song('download - task-123.flac');
+      await File(
+        '${directory.path}/download - task-123.lrc',
+      ).writeAsString('[00:01.000]离线歌词\n[00:01.000]Translation');
+      final task = DownloadTask(
+        id: 'task-123',
+        song: const OnlineSong(
+          provider: MusicProvider.netease,
+          id: '123',
+          title: '夜晚',
+          artist: 'Neko',
+        ),
+        directory: directory.path,
+        quality: 'lossless',
+        path: audio.path,
+        phase: DownloadPhase.completed,
+      );
+      await controller.importDownload(task, play: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await controller.flushed;
+      expect(engine.playing, isTrue);
+      expect(engine.currentPath, audio.path);
+      expect(controller.current!.title, '夜晚');
+      expect(controller.lyrics.single.text, '离线歌词');
+      expect(controller.lyrics.single.translation, 'Translation');
+      expect(controller.history, [audio.path]);
+      final saved = LibraryData.decode(store.value!);
+      expect(saved.session!.paths, [audio.path]);
+      expect(saved.tracks.single.title, '夜晚');
+    },
+  );
+
+  test('missing and unfinished downloads leave playback unchanged', () async {
+    final audio = await song();
+    await controller.importFiles([audio.path]);
+    await controller.play(controller.tracks, 0);
+    final task = DownloadTask(
+      id: 'task-123',
+      song: const OnlineSong(
+        provider: MusicProvider.netease,
+        id: '123',
+        title: '夜晚',
+        artist: 'Neko',
+      ),
+      directory: directory.path,
+      quality: 'lossless',
+      path: '${directory.path}/missing.flac',
+      phase: DownloadPhase.completed,
+    );
+    await controller.importDownload(task, play: true);
+    expect(controller.error, contains('下载文件不存在'));
+    expect(engine.currentPath, audio.path);
+    expect(controller.tracks, hasLength(1));
+    task.path = audio.path;
+    task.phase = DownloadPhase.paused;
+    await controller.importDownload(task, play: true);
+    expect(controller.error, contains('下载尚未完成'));
+    expect(engine.currentPath, audio.path);
+    expect(controller.tracks, hasLength(1));
+  });
+
+  test(
+    'legacy playback preferences apply and persist without autoplay',
+    () async {
+      await controller.importPlaybackPreferences(
+        speed: 1.5,
+        quality: 'lossless',
+        translation: false,
+        twoLines: false,
+      );
+      final saved = LibraryData.decode(store.value!);
+      expect(saved.rate, 1.5);
+      expect(saved.preferredQuality, 'lossless');
+      expect(saved.showTranslation, isFalse);
+      expect(saved.doubleLyrics, isFalse);
+      expect(engine.rate, 1.5);
+      expect(engine.playing, isFalse);
+      expect(controller.tracks, isEmpty);
+      await controller.importPlaybackPreferences(translation: true);
+      expect(controller.rate, 1.5);
+      expect(controller.preferredQuality, 'lossless');
+      expect(controller.showTranslation, isTrue);
+      expect(controller.doubleLyrics, isFalse);
+    },
+  );
+
+  test('legacy preference import reports persistence failure', () async {
+    store.failWrite = true;
+    await expectLater(
+      controller.importPlaybackPreferences(speed: 1.5),
+      throwsStateError,
+    );
+  });
+
+  test(
+    'legacy preference import refuses unreadable library and bad speed',
+    () async {
+      for (final speed in [double.nan, double.infinity, 0.0, 3.0]) {
+        await expectLater(
+          controller.importPlaybackPreferences(speed: speed),
+          throwsFormatException,
+        );
+      }
+      expect(engine.rate, 1);
+      final brokenStore = MemoryStore()..value = 'not-json';
+      final brokenEngine = FakeEngine();
+      final broken = PlayerController(engine: brokenEngine, store: brokenStore);
+      await broken.initialize();
+      try {
+        await expectLater(
+          broken.importPlaybackPreferences(speed: 1.5),
+          throwsA(isA<Exception>()),
+        );
+        expect(brokenEngine.rate, 1);
+        expect(brokenStore.value, 'not-json');
+      } finally {
+        broken.dispose();
+      }
+    },
+  );
 
   test(
     'queue append and reorder preserve playback, removal and final clear work',
@@ -92,12 +246,16 @@ void main() {
         second.path,
         first.path,
       ]);
-      expect(restoredEngine.index, 2);
-      expect(restoredEngine.position, const Duration(seconds: 37));
+      expect(restored.queueIndex, 2);
+      expect(restored.position, const Duration(seconds: 37));
+      expect(restoredEngine.currentPath, isNull);
+      expect(restoredEngine.position, Duration.zero);
       expect(restoredEngine.playing, isFalse);
       expect(restored.repeat, RepeatMode.single);
       await restored.toggle();
       expect(restoredEngine.playing, isTrue);
+      expect(restoredEngine.index, 2);
+      expect(restoredEngine.position, const Duration(seconds: 37));
       restored.dispose();
       await restored.flushed;
     },
@@ -114,6 +272,8 @@ void main() {
       final restoredEngine = FakeEngine()..failOpen = true;
       final restored = PlayerController(engine: restoredEngine, store: store);
       await restored.initialize();
+      expect(restored.error, isNull);
+      await restored.toggle();
       expect(restored.error, isNotNull);
       expect(restored.snapshot.session!.paths, [audio.path]);
       restoredEngine.failOpen = false;
@@ -173,6 +333,33 @@ void main() {
       expect(engine.playing, isTrue);
       expect(restored.history, [audio.path]);
       expect(restored.favorites, {audio.path});
+    },
+  );
+
+  test(
+    'adding an undiscovered online song preserves it across library reloads',
+    () async {
+      final track = Track.fromOnline(
+        const OnlineSong(
+          provider: MusicProvider.netease,
+          id: '42',
+          title: 'Online',
+          artist: 'Neko',
+        ),
+      );
+      controller.addToPlaylist('missing-playlist', track);
+      expect(controller.tracks, isEmpty);
+      final id = controller.createPlaylist('Online playlist')!;
+      controller.addToPlaylist(id, track);
+      controller.addToPlaylist(id, track);
+      await controller.flushed;
+      final restored = LibraryData.decode(store.value!);
+      expect(restored.tracks.single.online?.id, '42');
+      expect(restored.playlists.single.paths, [track.path]);
+      expect(restored.favorites, isEmpty);
+      expect(restored.history, isEmpty);
+      expect(engine.playing, isFalse);
+      expect(controller.queue, isEmpty);
     },
   );
 

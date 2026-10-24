@@ -1,5 +1,6 @@
 import '../domain/library.dart';
 import '../domain/online_music.dart';
+import '../domain/music_plugin.dart';
 
 class CloudLibrary {
   static List<Map<String, dynamic>> items(Object? value) =>
@@ -18,9 +19,22 @@ class CloudLibrary {
 
   static Track? decodeSong(Map<String, dynamic> song) {
     final source = song['source'] ?? 'netease';
-    final provider = MusicProvider.values
-        .where((provider) => provider.sourceId == source)
-        .firstOrNull;
+    MusicPluginSource? plugin;
+    if (song['pluginSource'] is Map<String, dynamic>) {
+      try {
+        plugin = MusicPluginSource.fromJson(
+          song['pluginSource'] as Map<String, dynamic>,
+          reference: true,
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+    final provider =
+        MusicProvider.values
+            .where((provider) => provider.sourceId == source)
+            .firstOrNull ??
+        (plugin != null ? MusicProvider.gatewayKugou : null);
     if (provider == null) return null;
     final id = song['id']?.toString() ?? '';
     final rawHash = song['hash']?.toString() ?? '';
@@ -45,6 +59,8 @@ class CloudLibrary {
         albumId: song['albumId']?.toString() ?? '',
         albumAudioId: song['albumAudioId']?.toString() ?? '0',
         artwork: song['pc']?.toString() ?? '',
+        pluginSource: plugin,
+        pluginData: Map<String, dynamic>.from(song['pluginData'] as Map? ?? {}),
       ),
     );
   }
@@ -56,10 +72,14 @@ class CloudLibrary {
           int.tryParse(song.id) ??
           (song.hash.isEmpty
               ? 0
-              : int.tryParse(song.hash.substring(0, 15), radix: 16) ?? 0),
+              : int.tryParse(
+                      song.hash.substring(0, song.hash.length.clamp(0, 15)),
+                      radix: 16,
+                    ) ??
+                    0),
       'nm': song.title,
       'ar': song.artist,
-      'source': song.provider.sourceId,
+      'source': song.pluginSource?.id ?? song.provider.sourceId,
       'hash': song.hash,
       'albumId': song.albumId,
       'albumAudioId': int.tryParse(song.albumAudioId) ?? 0,
@@ -68,6 +88,9 @@ class CloudLibrary {
         'providerSource': song.provider.gateway,
         'providerMediaId': song.id,
       },
+      if (song.pluginSource != null)
+        'pluginSource': song.pluginSource!.toJson(includeScript: false),
+      if (song.pluginData.isNotEmpty) 'pluginData': song.pluginData,
     };
   }
 

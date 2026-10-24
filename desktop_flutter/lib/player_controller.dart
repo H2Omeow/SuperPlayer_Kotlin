@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as paths;
@@ -17,7 +18,8 @@ class PlayerController extends ChangeNotifier {
     required this.store,
     this.onlineSource,
     this.downloads,
-  }) {
+    Random? random,
+  }) : _random = random ?? Random() {
     engine.addListener(_playbackChanged);
   }
 
@@ -25,6 +27,7 @@ class PlayerController extends ChangeNotifier {
   final LibraryStore store;
   final OnlineAudioSource? onlineSource;
   final DownloadController? downloads;
+  final Random _random;
   List<Track> tracks = [];
   Set<String> favorites = {};
   List<String> history = [];
@@ -79,15 +82,29 @@ class PlayerController extends ChangeNotifier {
     'alac',
   ];
 
-  Track? get current => engine.currentPath == null
-      ? null
-      : queue.where((track) => track.path == engine.currentPath).firstOrNull;
+  bool get sessionPending => _pendingSession != null;
+  int get queueIndex => _pendingSession?.index ?? engine.index;
+  Duration get position => _pendingSession?.position ?? engine.position;
+  Duration get duration => sessionPending ? Duration.zero : engine.duration;
+  Track? get current {
+    final session = _pendingSession;
+    if (session != null && session.index >= 0 && session.index < queue.length) {
+      return queue[session.index];
+    }
+    if (engine.currentPath == null) return null;
+    if (engine.index >= 0 &&
+        engine.index < queue.length &&
+        queue[engine.index].path == engine.currentPath) {
+      return queue[engine.index];
+    }
+    return queue.where((track) => track.path == engine.currentPath).firstOrNull;
+  }
+
   List<Track> get recent => history
       .map((path) => tracks.where((track) => track.path == path).firstOrNull)
       .nonNulls
       .toList();
-  int get lyricIndex =>
-      lyrics.lastIndexWhere((line) => line.time <= engine.position);
+  int get lyricIndex => lyrics.lastIndexWhere((line) => line.time <= position);
   Future<void> get flushed => _writes;
 
   LibraryData get snapshot => LibraryData(
@@ -116,6 +133,52 @@ class PlayerController extends ChangeNotifier {
     final write = _persist();
     _notify();
     await write;
+  }
+
+  Future<void> importPlaybackQueue(
+    List<Track> importedTracks,
+    PlaybackSession importedSession,
+  ) async {
+    final pendingTracks = List<Track>.of(importedTracks);
+    final session = PlaybackSession.fromJson({
+      ...importedSession.toJson(),
+      'paths': List<String>.of(importedSession.paths),
+    });
+    final byPath = {for (final track in pendingTracks) track.path: track};
+    if (pendingTracks.isEmpty ||
+        pendingTracks.length > PlaybackSession.maxQueueLength ||
+        pendingTracks.any(
+          (track) => track.online == null || track.path != track.online!.key,
+        ) ||
+        session.paths.any((path) => !byPath.containsKey(path))) {
+      throw const FormatException('待导入的播放队列无效。');
+    }
+    final command = _commands.then((_) async {
+      if (_disposed) throw StateError('Player disposed');
+      if (!_storageReadable) {
+        throw const MusicSearchException('本地音乐库读取失败，未覆盖播放队列。');
+      }
+      await engine.clearQueue();
+      final merged = {...byPath, for (final track in tracks) track.path: track};
+      tracks = merged.values.toList();
+      queue = session.paths.map((path) => merged[path]!).toList();
+      _pendingSession = session;
+      _savedPosition = -1;
+      error = null;
+      _historyPath = null;
+      _lyricPath = null;
+      lyrics = [];
+      final write = _persist();
+      _notify();
+      await write;
+    });
+    _commands = command.catchError((Object failure) {
+      error = failure is MusicSearchException
+          ? failure.message
+          : '播放队列导入未完成，请检查播放内核和存储空间。';
+      _notify();
+    });
+    await command;
   }
 
   Future<void> initialize() async {
@@ -152,7 +215,6 @@ class PlayerController extends ChangeNotifier {
       await engine.setRate(rate);
       await engine.setPreferredQuality(preferredQuality);
       await engine.setRepeatMode(repeat);
-      if (_pendingSession != null) await _restoreSession(play: false);
     });
     _sessionTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (engine.currentPath == null || _pendingSession != null) return;
@@ -176,6 +238,7 @@ class PlayerController extends ChangeNotifier {
     if (offset > Duration.zero) await engine.seek(offset);
     if (play) await engine.toggle();
     _pendingSession = null;
+    _playbackChanged();
     _notify();
   }
 
@@ -209,6 +272,7 @@ class PlayerController extends ChangeNotifier {
         )) {
           continue;
         }
+        if (imported.containsKey(path)) continue;
         if (!await File(path).exists()) continue;
         final name = paths.basenameWithoutExtension(path);
         final separator = name.indexOf(' - ');
@@ -228,10 +292,42 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  Future<void> importDownload(DownloadTask task, {bool play = false}) =>
+      perform(() async {
+        final downloadedPath = task.path;
+        if (task.phase != DownloadPhase.completed || downloadedPath == null) {
+          throw const MusicSearchException('下载尚未完成，请完成下载后再播放或导入。');
+        }
+        final path = paths.normalize(paths.absolute(downloadedPath));
+        if (!extensions.contains(
+              paths.extension(path).replaceFirst('.', '').toLowerCase(),
+            ) ||
+            await FileSystemEntity.type(path, followLinks: false) !=
+                FileSystemEntityType.file) {
+          throw const MusicSearchException('下载文件不存在或无法读取，请重新下载。');
+        }
+        final track = Track(
+          path: path,
+          title: task.song.title,
+          artist: task.song.artist,
+        );
+        tracks = {
+          for (final existing in tracks) existing.path: existing,
+          path: track,
+        }.values.toList();
+        error = null;
+        await _persist();
+        _notify();
+        if (play) await _play([track], 0);
+      });
+
   Future<void> play(List<Track> list, int index) =>
       perform(() => _play(list, index));
 
   Future<void> _play(List<Track> list, int index) async {
+    if (list.length > PlaybackSession.maxQueueLength) {
+      throw const MusicSearchException('播放队列最多 100000 项。');
+    }
     if (list.isEmpty || index < 0 || index >= list.length) return;
     if (list[index].online == null && !await File(list[index].path).exists()) {
       error = '文件已移动或删除，请重新导入。';
@@ -255,17 +351,111 @@ class PlayerController extends ChangeNotifier {
       rethrow;
     }
     _pendingSession = null;
+    _playbackChanged();
     _persist();
     _notify();
   }
 
-  Future<void> toggle() => _pendingSession != null
-      ? perform(() => _restoreSession(play: true))
-      : current == null
-      ? play(tracks, 0)
-      : perform(engine.toggle);
+  Future<void> toggle() => perform(() async {
+    if (_pendingSession != null) {
+      await _restoreSession(play: true);
+    } else if (current == null) {
+      await _play(tracks, 0);
+    } else {
+      await engine.toggle();
+    }
+  });
+
+  Future<void> pause() => perform(() async {
+    if (!sessionPending || engine.playing) await engine.pause();
+  });
+
+  Future<void> resume() => perform(() async {
+    if (sessionPending) {
+      await _restoreSession(play: true);
+    } else if (current == null) {
+      await _play(tracks, 0);
+    } else if (!engine.playing) {
+      await engine.toggle();
+    }
+  });
+
+  Future<void> next() => perform(() => _advance(1));
+  Future<void> previous() => perform(() => _advance(-1));
+
+  Future<void> _advance(int direction) async {
+    final session = _pendingSession;
+    if (session == null) {
+      if (direction > 0) {
+        await engine.next();
+      } else {
+        await engine.previous();
+      }
+      return;
+    }
+    if (queue.isEmpty) return;
+    final selected = repeat == RepeatMode.shuffle && queue.length > 1
+        ? (session.index + 1 + _random.nextInt(queue.length - 1)) % queue.length
+        : (session.index + direction + queue.length) % queue.length;
+    _pendingSession = PlaybackSession(
+      paths: session.paths,
+      index: selected,
+      position: Duration.zero,
+    );
+    _persist();
+    _notify();
+    await _restoreSession(play: true);
+  }
+
+  Future<void> seek(Duration target) => perform(() => _seek(target));
+
+  Future<void> _seek(Duration target) async {
+    if (current == null) return;
+    final session = _pendingSession;
+    final upper = session != null
+        ? PlaybackSession.maxPosition
+        : engine.duration;
+    if (upper <= Duration.zero) return;
+    final bounded = Duration(
+      microseconds: target.inMicroseconds.clamp(0, upper.inMicroseconds),
+    );
+    if (session != null) {
+      _pendingSession = PlaybackSession(
+        paths: session.paths,
+        index: session.index,
+        position: bounded,
+      );
+    } else {
+      await engine.seek(bounded);
+    }
+    _persist();
+    _notify();
+  }
+
+  Future<void> stop() => perform(() async {
+    if (!sessionPending || engine.playing) await engine.pause();
+    await _seek(Duration.zero);
+  });
 
   Future<void> enqueue(Track track) => perform(() async {
+    if (queue.length >= PlaybackSession.maxQueueLength) {
+      throw const MusicSearchException('播放队列最多 100000 项。');
+    }
+    final session = _pendingSession;
+    if (session != null) {
+      queue = [...queue, track];
+      _pendingSession = PlaybackSession(
+        paths: queue.map((track) => track.path).toList(),
+        index: session.index,
+        position: session.position,
+      );
+      if (!tracks.any((item) => item.path == track.path)) {
+        tracks = [...tracks, track];
+      }
+      _persist();
+      _notify();
+      return;
+    }
     if (queue.isEmpty || current == null) {
       await _play([track], 0);
       return;
@@ -290,7 +480,8 @@ class PlayerController extends ChangeNotifier {
         from == to) {
       return;
     }
-    var selected = engine.index;
+    final session = _pendingSession;
+    var selected = session?.index ?? engine.index;
     final pending = List<Track>.of(queue);
     pending.insert(to, pending.removeAt(from));
     if (selected == from) {
@@ -300,7 +491,15 @@ class PlayerController extends ChangeNotifier {
     } else if (from > selected && to <= selected) {
       selected++;
     }
-    await engine.replaceQueue(pending, selected);
+    if (session == null) {
+      await engine.replaceQueue(pending, selected);
+    } else {
+      _pendingSession = PlaybackSession(
+        paths: pending.map((track) => track.path).toList(),
+        index: selected,
+        position: session.position,
+      );
+    }
     queue = pending;
     _persist();
     _notify();
@@ -316,8 +515,22 @@ class PlayerController extends ChangeNotifier {
       _notify();
       return;
     }
-    final selected = engine.index;
+    final session = _pendingSession;
+    final selected = session?.index ?? engine.index;
     final pending = List<Track>.of(queue)..removeAt(index);
+    if (session != null) {
+      queue = pending;
+      _pendingSession = PlaybackSession(
+        paths: pending.map((track) => track.path).toList(),
+        index: index < selected
+            ? selected - 1
+            : selected.clamp(0, pending.length - 1),
+        position: index == selected ? Duration.zero : session.position,
+      );
+      _persist();
+      _notify();
+      return;
+    }
     if (index == selected) {
       await _play(pending, index.clamp(0, pending.length - 1));
       return;
@@ -342,22 +555,21 @@ class PlayerController extends ChangeNotifier {
   });
 
   void toggleFavorite(Track track) {
+    if (!tracks.any((item) => item.path == track.path)) {
+      tracks = [...tracks, track];
+    }
     if (!favorites.remove(track.path)) favorites.add(track.path);
     _persist();
     _notify();
   }
 
-  void createPlaylist(String name) {
-    if (name.trim().isEmpty) return;
-    playlists = [
-      ...playlists,
-      LocalPlaylist(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        name: name.trim(),
-      ),
-    ];
+  String? createPlaylist(String name) {
+    if (name.trim().isEmpty) return null;
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    playlists = [...playlists, LocalPlaylist(id: id, name: name.trim())];
     _persist();
     _notify();
+    return id;
   }
 
   void deletePlaylist(String id) {
@@ -367,6 +579,10 @@ class PlayerController extends ChangeNotifier {
   }
 
   void addToPlaylist(String id, Track track) {
+    if (!playlists.any((playlist) => playlist.id == id)) return;
+    if (!tracks.any((item) => item.path == track.path)) {
+      tracks = [...tracks, track];
+    }
     playlists = playlists
         .map(
           (playlist) => playlist.id == id
@@ -425,6 +641,29 @@ class PlayerController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> importPlaybackPreferences({
+    double? speed,
+    String? quality,
+    bool? translation,
+    bool? twoLines,
+  }) async {
+    if (!_storageReadable) {
+      throw const MusicSearchException('本地音乐库读取失败，未覆盖播放设置。');
+    }
+    if (speed != null && (!speed.isFinite || speed < .5 || speed > 2)) {
+      throw const FormatException('播放速度无效。');
+    }
+    if (speed != null) await engine.setRate(speed);
+    if (quality != null) await engine.setPreferredQuality(quality);
+    rate = speed ?? rate;
+    preferredQuality = quality ?? preferredQuality;
+    showTranslation = translation ?? showTranslation;
+    doubleLyrics = twoLines ?? doubleLyrics;
+    final write = _persist();
+    _notify();
+    await write;
+  }
+
   void cycleRepeat() {
     setRepeatMode(
       RepeatMode.values[(repeat.index + 1) % RepeatMode.values.length],
@@ -444,7 +683,7 @@ class PlayerController extends ChangeNotifier {
     if (duration != null) {
       _sleepTimer = Timer(duration, () {
         sleepDeadline = null;
-        unawaited(perform(engine.pause));
+        unawaited(pause());
         _notify();
       });
     }
@@ -457,6 +696,13 @@ class PlayerController extends ChangeNotifier {
   }
 
   void _playbackChanged() {
+    if (sessionPending) {
+      if (engine.error != null && engine.error != error) {
+        error = engine.error;
+        _notify();
+      }
+      return;
+    }
     final track = current;
     var changed = false;
     if (track?.path != _lyricPath) {

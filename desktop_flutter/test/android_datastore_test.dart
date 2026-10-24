@@ -51,6 +51,53 @@ void main() {
     }
   });
 
+  test('preserves all AndroidX preference value types', () {
+    final bytes = Uint8List.fromList([
+      ...preferenceEntry('boolean', [8, 1]),
+      ...preferenceEntry('float', [21, 0, 0, 192, 63]),
+      ...preferenceEntry('integer', [24, 42]),
+      ...preferenceEntry('negative', [24, ...List.filled(9, 255), 1]),
+      ...preferenceEntry('long', [32, 128, 128, 128, 128, 16]),
+      ...preferenceEntry('set', [50, 6, 10, 1, 97, 10, 1, 98]),
+      ...preferenceEntry('double', [57, 0, 0, 0, 0, 0, 0, 248, 63]),
+      ...preferenceEntry('bytes', [66, 2, 0, 255]),
+    ]);
+    final values = AndroidDataStore.preferences(bytes);
+    expect(values, {
+      'boolean': true,
+      'float': 1.5,
+      'integer': 42,
+      'negative': -1,
+      'long': 4294967296,
+      'set': {'a', 'b'},
+      'double': 1.5,
+      'bytes': Uint8List.fromList([0, 255]),
+    });
+    bytes.fillRange(0, bytes.length, 0);
+    expect(values['bytes'], [0, 255]);
+  });
+
+  test('rejects corrupt typed values even when selecting only strings', () {
+    for (final value in [
+      [8, 2],
+      [21, 0, 0, 128, 127],
+      [57, 0, 0, 0, 0, 0, 0, 240, 127],
+      [24, 128, 128, 128, 128, 8],
+      [50, 3, 10, 1, 255],
+      [50, 2, 10, 3],
+      [66, 3, 0],
+      [21, 0, 0, 0],
+      [57, 0],
+    ]) {
+      expect(
+        () => AndroidDataStore.stringPreferences(
+          Uint8List.fromList(preferenceEntry('corrupt', value)),
+        ),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('rejects truncated fields, invalid tags and oversized varints', () {
     for (final bytes in [
       [10, 100, 1],

@@ -1,0 +1,202 @@
+name: Flutter desktop validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      arm64_angle_url:
+        description: 'HTTPS URL of a Windows ARM64 ANGLE ZIP (include/, lib/, DLLs at archive root)'
+        required: false
+        type: string
+      arm64_angle_sha256:
+        description: 'SHA256 of the ARM64 ANGLE ZIP; required for the Windows ARM64 job'
+        required: false
+        type: string
+      windows_decoders_url:
+        description: 'HTTPS ZIP containing verified decoder packages in windows-x64/ and windows-arm64/'
+        required: false
+        type: string
+      windows_decoders_sha256:
+        description: 'Trusted SHA256 of the decoder ZIP; required for Windows validation'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-desktop-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: linux-x64, runner: ubuntu-22.04, platform: linux, arch: x64}
+          - {target: linux-arm64, runner: ubuntu-22.04-arm, platform: linux, arch: arm64}
+          - {target: windows-x64, runner: windows-2022, platform: windows, arch: x64}
+          - {target: windows-arm64, runner: windows-11-arm, platform: windows, arch: arm64}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: desktop_flutter
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: flutter/flutter
+          ref: abaf9c523780a608bd46686fd5e53740a07077f8
+          path: .flutter-sdk
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libmpv-dev libsecret-1-dev libepoxy-dev libgnutls28-dev openssl
+          echo "$GITHUB_WORKSPACE/.flutter-sdk/bin" >> "$GITHUB_PATH"
+      - name: Set up Windows environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "$env:GITHUB_WORKSPACE\.flutter-sdk\bin" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Stage verified Windows ARM64 ANGLE dependency
+        if: matrix.target == 'windows-arm64'
+        shell: pwsh
+        env:
+          ANGLE_URL: ${{ inputs.arm64_angle_url }}
+          ANGLE_SHA256: ${{ inputs.arm64_angle_sha256 }}
+        run: |
+          if ($env:ANGLE_URL -notmatch '^https://' -or $env:ANGLE_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw 'Windows ARM64 validation requires an explicit HTTPS ANGLE archive and its trusted SHA256. An x64 fallback is not permitted.'
+          }
+          $archive = Join-Path $env:RUNNER_TEMP 'nekoplayer-arm64-angle.zip'
+          Invoke-WebRequest -Uri $env:ANGLE_URL -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $env:ANGLE_SHA256) {
+            throw 'ARM64 ANGLE archive checksum mismatch'
+          }
+          $destination = Join-Path $env:RUNNER_TEMP 'nekoplayer-arm64-angle'
+          Expand-Archive -Path $archive -DestinationPath $destination
+          "NEKO_WINDOWS_ARM64_ANGLE_DIR=$destination" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Resolve pinned Flutter dependencies
+        shell: bash
+        run: flutter pub get --enforce-lockfile
+      - name: Stage verified Windows decoder packages
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          DECODER_URL: ${{ inputs.windows_decoders_url }}
+          DECODER_SHA256: ${{ inputs.windows_decoders_sha256 }}
+          NEKO_TARGET: ${{ matrix.target }}
+        run: |
+          if ($env:DECODER_URL -notmatch '^https://' -or $env:DECODER_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw 'Windows validation requires a verified FFmpeg/ffprobe package URL and trusted SHA256. A system decoder or missing decoder is not permitted.'
+          }
+          $archive = Join-Path $env:RUNNER_TEMP 'nekoplayer-windows-decoders.zip'
+          Invoke-WebRequest -Uri $env:DECODER_URL -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $env:DECODER_SHA256) {
+            throw 'Windows decoder archive checksum mismatch'
+          }
+          $destination = Join-Path $env:RUNNER_TEMP 'nekoplayer-windows-decoders'
+          Expand-Archive -Path $archive -DestinationPath $destination
+          $package = Join-Path $destination $env:NEKO_TARGET
+          python tool/check_artifact.py $env:NEKO_TARGET --decoder-directory $package
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Windows decoder package failed architecture, source provenance or checksum validation'
+          }
+          "NEKO_DECODER_DIR=$package" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          'NEKO_REQUIRE_DECODERS=ON' | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Analyze Flutter code
+        shell: bash
+        run: flutter analyze --no-pub
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify shared plugin runtime
+        shell: bash
+        run: |
+          npm ci --prefix tool/plugin_runtime
+          npm run build --prefix tool/plugin_runtime
+          npm test --prefix tool/plugin_runtime
+      - name: Build native plugin runtime and verify host integration
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            cmake -S ../native_plugins -B build/plugin-tests -DCMAKE_BUILD_TYPE=Release
+            cmake --build build/plugin-tests --parallel
+            library="$PWD/build/plugin-tests/libnekoplayer_plugins.so"
+          else
+            architecture=x64
+            if [ '${{ matrix.arch }}' = arm64 ]; then architecture=ARM64; fi
+            cmake -S ../native_plugins -B build/plugin-tests -A "$architecture"
+            cmake --build build/plugin-tests --config Release --parallel
+            library="$PWD/build/plugin-tests/Release/nekoplayer_plugins.dll"
+          fi
+          python ../native_plugins/test_vm.py "$library"
+          python ../native_plugins/test_runtime.py "$library"
+          echo "NEKO_PLUGIN_LIBRARY=$library" >> "$GITHUB_ENV"
+      - name: Run Flutter tests
+        shell: bash
+        run: flutter test --no-pub
+      - name: Verify native validation regressions
+        run: python -m unittest discover -s tool -p "test_*.py"
+      - name: Compile and execute portable native PCM and DSP validation
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            cmake -S native -B build/native-smoke -DCMAKE_BUILD_TYPE=Release -DNEKO_BUILD_NATIVE_SMOKE=ON
+            cmake --build build/native-smoke --parallel
+            ctest --test-dir build/native-smoke --output-on-failure
+          else
+            architecture=x64
+            if [ '${{ matrix.arch }}' = arm64 ]; then architecture=ARM64; fi
+            cmake -S native -B build/native-smoke -A "$architecture" -DNEKO_BUILD_NATIVE_SMOKE=ON
+            cmake --build build/native-smoke --config Release --parallel
+            ctest --test-dir build/native-smoke --build-config Release --output-on-failure
+          fi
+      - name: Build verified Linux decoder package
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python3 tool/build_decoder.py '${{ matrix.target }}' --jobs "$(nproc)"
+          echo "NEKO_DECODER_DIR=$PWD/build/decoder/${{ matrix.target }}/package" >> "$GITHUB_ENV"
+          echo 'NEKO_REQUIRE_DECODERS=ON' >> "$GITHUB_ENV"
+      - name: Compile native Flutter application
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            flutter build linux --release --no-pub
+          else
+            flutter build windows --release --no-pub
+          fi
+      - name: Verify actual bundle architecture
+        env:
+          NEKO_TARGET: ${{ matrix.target }}
+          NEKO_PLATFORM: ${{ matrix.platform }}
+          NEKO_ARCH: ${{ matrix.arch }}
+        shell: python
+        run: |
+          import os
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'tool')
+          from check_artifact import verify_bundle
+          platform = os.environ['NEKO_PLATFORM']
+          root = Path('build') / platform / os.environ['NEKO_ARCH']
+          bundle = root / ('release/bundle' if platform == 'linux' else 'runner/Release')
+          binaries = verify_bundle(os.environ['NEKO_TARGET'], bundle, require_decoders=True)
+          print(f'Verified {len(binaries)} native files in {bundle}; compilation validation only, not a release or playback certification.')
+      - name: Exercise compiled Linux DSP and FFmpeg pipeline
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          NEKO_DSP_LIBRARY="$PWD/build/linux/${{ matrix.arch }}/release/bundle/lib/libnekoplayer_dsp.so" \
+          NEKOPLAYER_FFMPEG="$PWD/build/linux/${{ matrix.arch }}/release/bundle/native/ffmpeg" \
+          NEKOPLAYER_FFPROBE="$PWD/build/linux/${{ matrix.arch }}/release/bundle/native/ffprobe" \
+            flutter test --no-pub test/audio_effects_test.dart

@@ -85,6 +85,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    sourceSets.getByName("main").assets.srcDir("../desktop_flutter/assets")
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")

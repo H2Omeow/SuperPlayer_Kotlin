@@ -1,12 +1,15 @@
+import 'music_plugin.dart';
+
 enum MusicProvider {
   netease('网易云'),
   kugou('酷狗'),
-  gatewayKugou('惜缘 · 酷狗', gateway: 'kg'),
-  gatewayKuwo('惜缘 · 酷我', gateway: 'kw'),
-  gatewayNetease('惜缘 · 网易', gateway: 'wy'),
-  gatewayTencent('惜缘 · QQ', gateway: 'tx'),
-  gatewayMigu('惜缘 · 咪咕', gateway: 'mg'),
-  gatewayBilibili('惜缘 · B站', gateway: 'bilibili');
+  gatewayKugou('内置 · 酷狗', gateway: 'kg'),
+  gatewayKuwo('内置 · 酷我', gateway: 'kw'),
+  gatewayNetease('内置 · 网易', gateway: 'wy'),
+  gatewayTencent('内置 · QQ', gateway: 'tx'),
+  gatewayMigu('内置 · 咪咕', gateway: 'mg'),
+  gatewayBilibili('内置 · B站', gateway: 'bilibili'),
+  pluginQishui('内置 · 汽水', gateway: 'qishui');
 
   const MusicProvider(this.label, {this.gateway});
   final String label;
@@ -36,6 +39,8 @@ class OnlineSong {
     this.albumId = '',
     this.albumAudioId = '',
     this.artwork = '',
+    this.pluginSource,
+    this.pluginData = const {},
   });
 
   final MusicProvider provider;
@@ -47,6 +52,8 @@ class OnlineSong {
   final String albumId;
   final String albumAudioId;
   final String artwork;
+  final MusicPluginSource? pluginSource;
+  final Map<String, dynamic> pluginData;
 
   factory OnlineSong.fromJson(Map<String, dynamic> json) => OnlineSong(
     provider: MusicProvider.values.byName(json['provider'] as String),
@@ -58,6 +65,13 @@ class OnlineSong {
     albumId: json['albumId'] as String? ?? '',
     albumAudioId: json['albumAudioId'] as String? ?? '',
     artwork: json['artwork'] as String? ?? '',
+    pluginSource: json['pluginSource'] == null
+        ? null
+        : MusicPluginSource.fromJson(
+            json['pluginSource'] as Map<String, dynamic>,
+            reference: true,
+          ),
+    pluginData: Map<String, dynamic>.from(json['pluginData'] as Map? ?? {}),
   );
 
   Map<String, dynamic> toJson() => {
@@ -70,10 +84,13 @@ class OnlineSong {
     'albumId': albumId,
     'albumAudioId': albumAudioId,
     'artwork': artwork,
+    if (pluginSource != null)
+      'pluginSource': pluginSource!.toJson(includeScript: false),
+    if (pluginData.isNotEmpty) 'pluginData': pluginData,
   };
 
   String get key =>
-      '${provider.sourceId}:${provider.gateway != null || hash.isEmpty ? id : hash}';
+      '${pluginSource?.id ?? provider.sourceId}:${pluginSource?.platform == 'all' ? '${provider.sourceId}:' : ''}${pluginSource != null || provider.gateway != null || hash.isEmpty ? id : hash}';
 }
 
 class SearchPage {
@@ -91,6 +108,59 @@ class MusicSearchException implements Exception {
   String toString() => message;
 }
 
+class AudioUnavailableException extends MusicSearchException {
+  const AudioUnavailableException(super.message);
+}
+
+class AudioQuality {
+  const AudioQuality(this.id, this.label, this.rank, {this.size = 0});
+  final String id;
+  final String label;
+  final int rank;
+  final int size;
+
+  static List<AudioQuality> supported(MusicProvider provider) {
+    final formats = provider.gateway != null
+        ? const {
+            '128k': '标准 128k',
+            '192k': '较高 192k',
+            '320k': '高品质 320k',
+            'flac': '无损 FLAC',
+            'hires': 'Hi-Res',
+          }
+        : provider == MusicProvider.kugou
+        ? const {
+            '128': '标准 128k',
+            '320': '高品质 320k',
+            'flac': '无损 FLAC',
+            'high': 'Hi-Res',
+            'viper_atmos': '全景声',
+            'viper_tape': '蝰蛇磁带',
+            'viper_clear': '蝰蛇超清',
+            'super': '超清母带',
+          }
+        : const {
+            'standard': '标准 128k',
+            'higher': '较高 192k',
+            'exhigh': '极高 320k',
+            'lossless': '无损 SQ',
+            'hires': 'Hi-Res',
+            'jyeffect': '高清臻音',
+            'sky': '沉浸环绕声',
+            'jymaster': '超清母带',
+            'dolby': '臻音全景声',
+          };
+    return [
+      for (var index = 0; index < formats.length; index++)
+        AudioQuality(
+          formats.keys.elementAt(index),
+          formats.values.elementAt(index),
+          index,
+        ),
+    ];
+  }
+}
+
 class MusicHttpException extends MusicSearchException {
   MusicHttpException(this.status) : super('音乐平台请求失败（HTTP $status），请稍后重试。');
   final int status;
@@ -100,6 +170,14 @@ abstract interface class MusicCatalog {
   Future<SearchPage> search(MusicProvider provider, String keyword, int page);
 }
 
+abstract interface class PluginMusicCatalog {
+  Future<SearchPage> searchPlugin(
+    MusicPluginSource source,
+    String keyword,
+    int page,
+  );
+}
+
 class ResolvedAudio {
   const ResolvedAudio(
     this.uri,
@@ -107,12 +185,14 @@ class ResolvedAudio {
     this.size = 0,
     this.format = '',
     this.checksum = '',
+    this.headers = const {},
   });
   final Uri uri;
   final String quality;
   final int size;
   final String format;
   final String checksum;
+  final Map<String, String> headers;
 }
 
 abstract interface class OnlineAudioSource {

@@ -14,14 +14,29 @@ class EffectsPlaybackEngine extends PlaybackEngine {
     OnlineAudioSource? onlineSource,
     PlaybackEngine? normal,
     DspPlaybackEngine? professional,
+    Future<String?> Function()? readSettings,
+    Future<void> Function(String)? writeSettings,
   }) : normal = normal ?? MediaKitEngine(onlineSource: onlineSource),
        professional =
-           professional ?? DspPlaybackEngine(onlineSource: onlineSource) {
+           professional ?? DspPlaybackEngine(onlineSource: onlineSource),
+       _readSettings =
+           readSettings ??
+           (() => SharedPreferencesAsync().getString(
+             'nekoplayer.flutter.effects.v1',
+           )),
+       _writeSettings =
+           writeSettings ??
+           ((value) => SharedPreferencesAsync().setString(
+             'nekoplayer.flutter.effects.v1',
+             value,
+           )) {
     this.normal.addListener(_changed);
     this.professional.addListener(_changed);
   }
   final PlaybackEngine normal;
   final DspPlaybackEngine professional;
+  final Future<String?> Function() _readSettings;
+  final Future<void> Function(String) _writeSettings;
   AudioEffects effects = const AudioEffects();
   PlaybackEngine get active => effects.enabled ? professional : normal;
   List<Track> _tracks = [];
@@ -33,9 +48,7 @@ class EffectsPlaybackEngine extends PlaybackEngine {
 
   Future<void> initializeEffects() async {
     try {
-      final raw = await SharedPreferencesAsync().getString(
-        'nekoplayer.flutter.effects.v1',
-      );
+      final raw = await _readSettings();
       if (raw != null) {
         effects = AudioEffects.fromJson(
           jsonDecode(raw) as Map<String, dynamic>,
@@ -81,12 +94,7 @@ class EffectsPlaybackEngine extends PlaybackEngine {
       if (!next.enabled && previous.enabled) await professional.stop();
       if (_settingsReadable) {
         final encoded = jsonEncode(effects.toJson());
-        final write = _writes.then(
-          (_) => SharedPreferencesAsync().setString(
-            'nekoplayer.flutter.effects.v1',
-            encoded,
-          ),
-        );
+        final write = _writes.then((_) => _writeSettings(encoded));
         _writes = write.catchError((Object _) {});
         try {
           await write;
@@ -96,11 +104,20 @@ class EffectsPlaybackEngine extends PlaybackEngine {
       }
     } catch (_) {
       professional.configure(previous);
-      effectsError = '音效切换失败，已保留原播放模式。请确认已安装同架构 FFmpeg，且音频设备可用。';
+      effectsError = '音效切换失败，已保留原播放模式。请确认同架构解码组件完整，且音频设备可用。';
     } finally {
       changing = false;
       if (!_disposed) notifyListeners();
     }
+  }
+
+  Future<void> importParameters(AudioEffects imported) async {
+    if (!_settingsReadable || changing || _disposed) {
+      throw StateError('音效设置不可写或正在切换，未导入。');
+    }
+    final snapshot = AudioEffects.fromJson(imported.toJson());
+    await configure(snapshot.copyWith(enabled: effects.enabled));
+    if (effectsError != null) throw StateError(effectsError!);
   }
 
   void _changed() {

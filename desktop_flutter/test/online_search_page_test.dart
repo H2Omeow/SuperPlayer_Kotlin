@@ -32,6 +32,43 @@ class TestCatalog implements MusicCatalog {
 }
 
 void main() {
+  testWidgets(
+    'online results expose favorite toggle and local playlist actions without playing',
+    (tester) async {
+      final controller = online.SearchController(TestCatalog());
+      addTearDown(controller.dispose);
+      final favorites = <String>{};
+      OnlineSong? selected;
+      var plays = 0;
+      await controller.search('Neko');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: OnlineSearchPage(
+              controller: controller,
+              onPlay: (_, _) => plays++,
+              isFavorite: (song) => favorites.contains(song.key),
+              onFavorite: (song) {
+                if (!favorites.remove(song.key)) favorites.add(song.key);
+              },
+              onPlaylist: (song) => selected = song,
+            ),
+          ),
+        ),
+      );
+      for (final action in ['收藏', '取消收藏', '加入本机歌单']) {
+        await tester.tap(find.byTooltip('歌曲操作'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(action));
+        await tester.pumpAndSettle();
+      }
+      expect(favorites, isEmpty);
+      expect(selected?.id, '1');
+      expect(plays, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('submit, paginate and switch sources without network access', (
     tester,
   ) async {

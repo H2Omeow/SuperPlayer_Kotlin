@@ -153,9 +153,13 @@ class AccountStore extends ChangeNotifier {
     bool replace = false,
     bool selectPlatform = true,
     String? siteToken,
+    String? expectedSiteToken,
   }) {
     final command = _writes.then((_) async {
       if (!readable) throw StateError('系统凭据库不可用或原数据损坏；为保护账号，未覆盖原数据。');
+      if (expectedSiteToken != null && expectedSiteToken != _siteToken) {
+        throw const FormatException('本站账号已切换，已取消旧账号操作。');
+      }
       if (platform != null && (platform < 0 || platform > 1)) {
         throw const FormatException('Invalid platform');
       }
@@ -172,23 +176,86 @@ class AccountStore extends ChangeNotifier {
       if (kugou != null) {
         nextKugou[selected] = {if (!replace) ...nextKugou[selected], ...kugou};
       }
-      final encoded = jsonEncode({
-        'version': 1,
-        'netease': nextNetease,
-        'kugou': nextKugou,
-        'platform': selectPlatform ? selected : _platform,
-        'siteToken': siteToken ?? _siteToken,
-      });
-      await storage?.write(encoded);
-      _netease = Map.of(nextNetease);
-      _kugou = nextKugou;
-      _platform = selectPlatform ? selected : _platform;
-      _siteToken = siteToken ?? _siteToken;
-      ensureDevice(0);
-      ensureDevice(1);
-      notifyListeners();
+      await _commit(
+        nextNetease,
+        nextKugou,
+        selectPlatform ? selected : _platform,
+        siteToken ?? _siteToken,
+      );
     });
     _writes = command.catchError((Object _) {});
     return command;
+  }
+
+  Future<void> importMissingSessions({
+    required Map<String, String> netease,
+    required List<Map<String, String>> kugou,
+    required int preferredPlatform,
+    required String expectedSiteToken,
+  }) {
+    final incomingNetease = Map<String, String>.of(netease);
+    final incomingKugou = [
+      for (final session in kugou) Map<String, String>.of(session),
+    ];
+    final command = _writes.then((_) async {
+      if (!readable) throw StateError('系统凭据库不可用或原数据损坏；为保护账号，未覆盖原数据。');
+      if (expectedSiteToken != _siteToken) {
+        throw const FormatException('本站账号已切换，已取消旧账号操作。');
+      }
+      if (incomingKugou.length != 2 ||
+          preferredPlatform < 0 ||
+          preferredPlatform > 1) {
+        throw const FormatException('云端账号平台无效。');
+      }
+      _validate(incomingNetease);
+      for (final session in incomingKugou) {
+        _validate(session);
+      }
+      final hasLocalKugou = _kugou.any(
+        (session) => (session['token'] ?? '').isNotEmpty,
+      );
+      final nextNetease = neteaseLoggedIn
+          ? _netease
+          : {..._netease, ...incomingNetease};
+      final nextKugou = [
+        for (var platform = 0; platform < 2; platform++)
+          {
+            ..._kugou[platform],
+            if ((_kugou[platform]['token'] ?? '').isEmpty)
+              ...incomingKugou[platform],
+          },
+      ];
+      await _commit(
+        nextNetease,
+        nextKugou,
+        hasLocalKugou ? _platform : preferredPlatform,
+        _siteToken,
+      );
+    });
+    _writes = command.catchError((Object _) {});
+    return command;
+  }
+
+  Future<void> _commit(
+    Map<String, String> netease,
+    List<Map<String, String>> kugou,
+    int platform,
+    String siteToken,
+  ) async {
+    final encoded = jsonEncode({
+      'version': 1,
+      'netease': netease,
+      'kugou': kugou,
+      'platform': platform,
+      'siteToken': siteToken,
+    });
+    await storage?.write(encoded);
+    _netease = Map.of(netease);
+    _kugou = kugou;
+    _platform = platform;
+    _siteToken = siteToken;
+    ensureDevice(0);
+    ensureDevice(1);
+    notifyListeners();
   }
 }

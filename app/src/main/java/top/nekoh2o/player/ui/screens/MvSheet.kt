@@ -48,7 +48,7 @@ fun MvSheet(source: String, initialQuery: String, onPauseMusic: () -> Unit, onDi
                 val found = withContext(Dispatchers.IO) { repo.search(source, query.trim(), currentPage) }
                 videos = (if (next) videos + found else found).distinctBy { it.source + ":" + it.id }
                 page = currentPage; more = found.size >= 30
-            } catch (problem: Exception) { error = if (source.startsWith("animemusic-")) "请确认已登录本站，或稍后重试" else "MV 搜索失败，请稍后重试" }
+            } catch (problem: Exception) { error = "内置插件 MV 搜索失败，请稍后重试" }
             finally { loading = false }
         }
     }

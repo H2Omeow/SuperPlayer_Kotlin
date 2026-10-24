@@ -16,7 +16,8 @@ data class Song(
     val albumAudioId: Long = 0,
     /** Underlying provider used by the external aggregation source (kg/kw/wy/tx/mg/bilibili). */
     val providerSource: String = "",
-    val providerMediaId: String = ""
+    val providerMediaId: String = "",
+    val pluginMetadata: String = ""
 )
 
 // 自定义歌单（对应 web customPlaylists）

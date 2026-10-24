@@ -63,7 +63,7 @@ class DesktopSettingsPage extends StatelessWidget {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('显示独立桌面歌词'),
-                subtitle: const Text('显示当前句和下一句；关闭主播放器页面后仍可见。'),
+                subtitle: const Text('显示当前句和下一句；显示开关、锁定、字号和透明度会在重启后保留。'),
                 value: integration.overlay,
                 onChanged: integration.lyricsAvailable
                     ? (value) => integration.configureOverlay(enabled: value)

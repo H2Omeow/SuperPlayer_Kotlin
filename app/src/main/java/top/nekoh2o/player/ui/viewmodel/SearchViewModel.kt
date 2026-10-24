@@ -13,7 +13,9 @@ import top.nekoh2o.player.data.model.SearchType
 import top.nekoh2o.player.data.model.Song
 import top.nekoh2o.player.data.repo.KugouRepository
 import top.nekoh2o.player.data.repo.MusicRepository
-import top.nekoh2o.player.data.repo.AnimemusicRepository
+import top.nekoh2o.player.data.plugins.PluginMusicRepository
+import top.nekoh2o.player.data.plugins.PluginStore
+import kotlinx.coroutines.CancellationException
 
 /**
  * 搜索功能 ViewModel
@@ -23,12 +25,13 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = MusicRepository()
     private val kgRepo = KugouRepository()
-    private val animemusicRepo = AnimemusicRepository()
+    private val pluginRepo = PluginMusicRepository()
 
     private var suggestJob: Job? = null
     private var searchOffset = 0
     private var searchKeyword = ""
     private var searchLoading = false
+    private var pluginPage = 1
 
     /**
      * 搜索建议（防抖 300ms）
@@ -47,7 +50,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
             delay(300)
             val suggestions = if (musicSource == "kugou") {
                 runCatching { kgRepo.searchSuggest(query.trim()) }.getOrDefault(emptyList())
-            } else if (musicSource.startsWith("animemusic-")) {
+            } else if (PluginStore.isPluginSource(musicSource)) {
                 emptyList()
             } else {
                 runCatching { repo.suggest(query.trim()) }.getOrDefault(emptyList())
@@ -69,12 +72,20 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
         searchKeyword = kw
         searchOffset = 0
+        pluginPage = 1
+
+        if (PluginStore.isPluginSource(musicSource)) {
+            if (searchType != SearchType.SONG) return SearchResult(error = "此音源仅支持单曲搜索")
+            return try {
+                val result = pluginRepo.search(musicSource, kw, pluginPage)
+                SearchResult(songs = result.songs, hasMore = result.hasMore)
+            } catch (failure: CancellationException) { throw failure }
+            catch (failure: Exception) { SearchResult(error = failure.message ?: "音源搜索失败") }
+        }
 
         return when (searchType) {
             SearchType.SONG -> {
-                val list = if (musicSource.startsWith("animemusic-")) {
-                    runCatching { animemusicRepo.search(musicSource.removePrefix("animemusic-"), kw, 1).songs }.getOrDefault(emptyList())
-                } else if (musicSource == "kugou") {
+                val list = if (musicSource == "kugou") {
                     runCatching { kgRepo.search(kw, 1) }.getOrDefault(emptyList())
                 } else {
                     runCatching { repo.search(kw, 0) }.getOrDefault(emptyList())
@@ -109,12 +120,14 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
         searchLoading = true
         return try {
+            if (PluginStore.isPluginSource(musicSource)) {
+                val result = pluginRepo.search(musicSource, searchKeyword, pluginPage + 1)
+                pluginPage += 1
+                return SearchResult(songs = result.songs, hasMore = result.hasMore)
+            }
             when (searchType) {
                 SearchType.SONG -> {
-                    val more = if (musicSource.startsWith("animemusic-")) {
-                        val page = (searchOffset / 30) + 1
-                        runCatching { animemusicRepo.search(musicSource.removePrefix("animemusic-"), searchKeyword, page).songs }.getOrDefault(emptyList())
-                    } else if (musicSource == "kugou") {
+                    val more = if (musicSource == "kugou") {
                         val page = (searchOffset / 30) + 1
                         runCatching { kgRepo.search(searchKeyword, page) }.getOrDefault(emptyList())
                     } else {
@@ -136,7 +149,9 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
                     SearchResult(albums = more, hasMore = more.size >= 30)
                 }
             }
-        } finally {
+        } catch (failure: CancellationException) { throw failure }
+        catch (failure: Exception) { SearchResult(error = failure.message ?: "加载音源失败") }
+        finally {
             searchLoading = false
         }
     }
@@ -145,6 +160,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
      * 加载推荐歌单和歌曲
      */
     suspend fun loadRecommendations(musicSource: String): RecommendResult {
+        if (PluginStore.isPluginSource(musicSource)) return RecommendResult()
         return if (musicSource == "kugou") {
             val songs = runCatching { kgRepo.getRecommendSongs() }.getOrDefault(emptyList())
             RecommendResult(songs = songs)
@@ -184,7 +200,8 @@ data class SearchResult(
     val songs: List<Song> = emptyList(),
     val artists: List<ArtistItem> = emptyList(),
     val albums: List<AlbumItem> = emptyList(),
-    val hasMore: Boolean = false
+    val hasMore: Boolean = false,
+    val error: String? = null
 )
 
 /**

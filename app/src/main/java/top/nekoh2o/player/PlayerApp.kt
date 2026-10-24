@@ -26,6 +26,9 @@ class PlayerApp : Application() {
         MusicCache.init(this)
         DownloadIndex.init(this)
         localStore = LocalStore(this)
+        appScope.launch {
+            runCatching { top.nekoh2o.player.data.plugins.PluginStore.initialize(this@PlayerApp) }
+        }
 
         // CookieStore 必须先初始化完成，ApiFactory 的拦截器才能读到正确的 token
         appScope.launch {

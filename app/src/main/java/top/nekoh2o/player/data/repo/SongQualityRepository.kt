@@ -9,7 +9,7 @@ import top.nekoh2o.player.data.net.*
 import java.io.IOException
 
 data class AudioQuality(val id: String, val label: String, val rank: Int, val size: Long = 0, val hash: String = "")
-data class ResolvedAudio(val quality: AudioQuality, val url: String)
+data class ResolvedAudio(val quality: AudioQuality, val url: String, val headers: Map<String, String> = emptyMap())
 
 /** Discovers the track's formats, then checks the current account's actual URL entitlement. */
 class SongQualityRepository internal constructor(
@@ -20,15 +20,10 @@ class SongQualityRepository internal constructor(
     private val native get() = ApiFactory.nativeMusic
     private suspend fun candidates(song: Song, download: Boolean): List<AudioQuality> {
         discovery?.let { return it(song, download) }
-        CookieStore.awaitReady();ApiFactory.awaitReady()
-        if (song.source.startsWith("animemusic-")) {
-            return listOf(
-                AudioQuality("128k", "标准 128k", 0),
-                AudioQuality("320k", "高品质 320k", 2),
-                AudioQuality("flac", "无损 FLAC", 3),
-                AudioQuality("hires", "Hi-Res", 4)
-            )
+        if (top.nekoh2o.player.data.plugins.PluginStore.isPluginSource(song.source)) {
+            return top.nekoh2o.player.data.plugins.PluginMusicRepository().qualities(song)
         }
+        CookieStore.awaitReady();ApiFactory.awaitReady()
         if(song.source=="kugou") {
             require(song.hash.matches(Regex("[a-fA-F0-9]{32}"))) { "歌曲缺少酷狗 hash，请重新搜索该歌曲" }
             KugouRepository().ensureInitialized()
@@ -43,7 +38,8 @@ class SongQualityRepository internal constructor(
 
     suspend fun resolvePlayback(song: Song, preferred: String): ResolvedAudio? {
         val choices=candidates(song,false)
-        val mapped=preferredFor(song.source,preferred)
+        val mapped=if (discovery == null && top.nekoh2o.player.data.plugins.PluginStore.isPluginSource(song.source))
+            top.nekoh2o.player.data.plugins.PluginMusicRepository().preferred(song, preferred) else preferredFor(song.source,preferred)
         val ordered=choices.sortedWith(compareByDescending<AudioQuality> { it.id==mapped }.thenByDescending { it.rank })
         // If a requested quality silently falls back, retain the fallback only after testing higher supported formats.
         var fallback: ResolvedAudio?=null
@@ -63,7 +59,8 @@ class SongQualityRepository internal constructor(
     }
 
     suspend fun resolveDownload(song: Song, id: String): ResolvedAudio? {
-        val choice=candidates(song,true).firstOrNull { it.id==preferredFor(song.source,id) }?:return null
+        val choices=candidates(song,true)
+        val choice=choices.firstOrNull { it.id==id } ?: choices.firstOrNull { it.id==preferredFor(song.source,id) } ?:return null
         return probeOrNull(song,choice,true)?.takeIf { it.quality.id==choice.id }
     }
 
@@ -80,9 +77,8 @@ class SongQualityRepository internal constructor(
 
     private suspend fun probe(song: Song, choice: AudioQuality, download: Boolean): ResolvedAudio? {
         urlResolver?.let { return it(song, choice, download) }
-        if (song.source.startsWith("animemusic-")) {
-            val url = AnimemusicRepository().resolveUrl(song, choice.id) ?: return null
-            return ResolvedAudio(choice, url)
+        if (top.nekoh2o.player.data.plugins.PluginStore.isPluginSource(song.source)) {
+            return top.nekoh2o.player.data.plugins.PluginMusicRepository().resolve(song, choice)
         }
         if(song.source=="kugou") {
             val body=ApiFactory.kugou.get("song/url",CookieStore.kgPlatformValue(),mapOf(
@@ -109,7 +105,7 @@ class SongQualityRepository internal constructor(
             "high" to ("Hi-Res" to 4),"viper_atmos" to ("全景声" to 5),"viper_tape" to ("蝰蛇磁带" to 5),
             "viper_clear" to ("蝰蛇超清" to 6),"super" to ("超清母带" to 7))
         internal fun preferredFor(source: String, preferred: String): String = if (source.startsWith("animemusic-")) mapOf(
-            "standard" to "128k", "higher" to "320k", "exhigh" to "320k", "lossless" to "flac", "hires" to "hires"
+            "standard" to "128k", "higher" to "192k", "exhigh" to "320k", "lossless" to "flac", "hires" to "hires"
         )[preferred] ?: preferred else if(source!="kugou") preferred else mapOf(
             "standard" to "128","higher" to "320","exhigh" to "320","lossless" to "flac","hires" to "high",
             "jyeffect" to "viper_clear","sky" to "viper_atmos","jymaster" to "super","dolby" to "viper_atmos")[preferred]?:preferred

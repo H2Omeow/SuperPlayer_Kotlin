@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../domain/online_music.dart';
+import '../data/plugin_subscriptions.dart';
 import '../search_controller.dart' as online;
 
 class OnlineSearchPage extends StatefulWidget {
@@ -11,21 +12,31 @@ class OnlineSearchPage extends StatefulWidget {
     required this.controller,
     this.onPlay,
     this.onEnqueue,
+    this.onFavorite,
+    this.isFavorite,
+    this.onPlaylist,
     this.onDownload,
     this.onComments,
     this.onBrowse,
     this.onAccountLibrary,
     this.onVideos,
+    this.subscriptions,
+    this.onSubscriptions,
   });
 
   final online.SearchController controller;
   final void Function(List<OnlineSong> songs, int index)? onPlay;
   final void Function(OnlineSong song)? onEnqueue;
+  final void Function(OnlineSong song)? onFavorite;
+  final bool Function(OnlineSong song)? isFavorite;
+  final void Function(OnlineSong song)? onPlaylist;
   final void Function(OnlineSong song)? onDownload;
   final void Function(OnlineSong song)? onComments;
   final VoidCallback? onBrowse;
   final VoidCallback? onAccountLibrary;
   final VoidCallback? onVideos;
+  final PluginSubscriptions? subscriptions;
+  final VoidCallback? onSubscriptions;
 
   @override
   State<OnlineSearchPage> createState() => _OnlineSearchPageState();
@@ -48,7 +59,7 @@ class _OnlineSearchPageState extends State<OnlineSearchPage> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: widget.controller,
+    listenable: Listenable.merge([widget.controller, widget.subscriptions]),
     builder: (context, child) {
       final controller = widget.controller;
       return Column(
@@ -62,6 +73,12 @@ class _OnlineSearchPageState extends State<OnlineSearchPage> {
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
               ),
+              if (widget.onSubscriptions != null)
+                IconButton(
+                  tooltip: '音源订阅',
+                  onPressed: widget.onSubscriptions,
+                  icon: const Icon(Icons.extension_outlined),
+                ),
               if (widget.onBrowse != null ||
                   widget.onAccountLibrary != null ||
                   widget.onVideos != null)
@@ -99,21 +116,38 @@ class _OnlineSearchPageState extends State<OnlineSearchPage> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text('原生曲库与惜缘惜梦音源；惜缘音源需要本站登录与有效配额。'),
+          const Text('选择曲库或订阅音源，搜索并播放音乐。'),
           const SizedBox(height: 16),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
                 for (final provider in MusicProvider.values)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(provider.label),
-                      selected: controller.provider == provider,
-                      onSelected: (_) => controller.selectProvider(provider),
+                  if (widget.subscriptions == null || provider.gateway == null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(provider.label),
+                        selected:
+                            controller.pluginSource == null &&
+                            controller.provider == provider,
+                        onSelected: (_) => controller.selectProvider(provider),
+                      ),
                     ),
-                  ),
+                for (final source in widget.subscriptions?.sources ?? [])
+                  if (source.capabilities.contains('search'))
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(
+                          source.builtin
+                              ? '内置 · ${source.name.replaceAll('-xm', '')}'
+                              : source.name,
+                        ),
+                        selected: controller.pluginSource?.id == source.id,
+                        onSelected: (_) => controller.selectPlugin(source),
+                      ),
+                    ),
               ],
             ),
           ),
@@ -191,6 +225,8 @@ class _OnlineSearchPageState extends State<OnlineSearchPage> {
                             : () => widget.onPlay!(controller.songs, index),
                         trailing:
                             widget.onComments != null ||
+                                widget.onFavorite != null ||
+                                widget.onPlaylist != null ||
                                 widget.onEnqueue != null
                             ? PopupMenuButton<String>(
                                 tooltip: '歌曲操作',
@@ -205,6 +241,20 @@ class _OnlineSearchPageState extends State<OnlineSearchPage> {
                                       value: 'queue',
                                       child: Text('加入播放队列'),
                                     ),
+                                  if (widget.onFavorite != null)
+                                    PopupMenuItem(
+                                      value: 'favorite',
+                                      child: Text(
+                                        widget.isFavorite?.call(song) == true
+                                            ? '取消收藏'
+                                            : '收藏',
+                                      ),
+                                    ),
+                                  if (widget.onPlaylist != null)
+                                    const PopupMenuItem(
+                                      value: 'playlist',
+                                      child: Text('加入本机歌单'),
+                                    ),
                                   if (widget.onDownload != null)
                                     const PopupMenuItem(
                                       value: 'download',
@@ -216,6 +266,10 @@ class _OnlineSearchPageState extends State<OnlineSearchPage> {
                                     widget.onComments?.call(song);
                                   } else if (value == 'queue') {
                                     widget.onEnqueue?.call(song);
+                                  } else if (value == 'favorite') {
+                                    widget.onFavorite?.call(song);
+                                  } else if (value == 'playlist') {
+                                    widget.onPlaylist?.call(song);
                                   } else {
                                     widget.onDownload?.call(song);
                                   }

@@ -1,3 +1,5 @@
+import 'mastering_presets.dart';
+
 class AudioEffects {
   const AudioEffects({
     this.enabled = false,
@@ -64,9 +66,7 @@ class AudioEffects {
       clamp(index < eq.length ? eq[index] : 0, -15, 15),
     for (final value in [bass, width, wet, room, damping, loudness])
       clamp(value, 0, 100),
-    mastering == 0 || mastering >= 15 && mastering <= 34
-        ? mastering.toDouble()
-        : 0,
+    MasteringPreset.find(mastering)?.id.toDouble() ?? 0,
     clamp(mix, 0, 100),
   ];
   AudioEffects copyWith({

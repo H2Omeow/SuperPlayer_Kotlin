@@ -39,3 +39,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: Neko CJK
+      fonts:
+        - asset: assets/fonts/NotoSansCJKsc-Regular.otf
+  assets:
+    - assets/music_plugins/
+    - assets/fonts/OFL.txt
+    - assets/lyric_engine/
+    - assets/lyric_engine/assets/
+    - assets/lyric_engine/assets/folium-icons/

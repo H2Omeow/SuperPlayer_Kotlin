@@ -1,5 +1,6 @@
 -keepattributes *Annotation*, InnerClasses, Signature, Exceptions
 -keep class top.nekoh2o.player.audio.NativeAudioEffectsController { *; }
+-keep class top.nekoh2o.player.data.plugins.NativePluginVm { *; }
 -dontnote kotlinx.serialization.**
 -keepclassmembers class **$$serializer { *; }
 -keepclasseswithmembers class top.nekoh2o.player.data.model.** {

@@ -1,0 +1,15 @@
+@font-face {
+  font-family: "Neko CJK";
+  src: url("../fonts/NotoSansCJKsc-Regular.otf") format("opentype");
+  font-display: swap;
+}
+:root { color-scheme: dark; font-family: "Neko CJK", sans-serif; }
+html, body { margin: 0; height: 100%; color: #f8f3fa; background: #14131b !important; }
+header { position: absolute; z-index: 10; inset: 0 0 auto; min-height: 64px; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; background: #14131bf0; box-sizing: border-box; }
+header > div { min-width: 0; }
+strong, small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+small { color: #bcb3c9; margin-top: 4px; font-size: 12px; }
+label { font-size: 12px; flex-shrink: 0; color: #bcb3c9; }
+select { font: inherit; margin-left: 6px; padding: 6px; color: #f8f3fa; background: #292332; border: 1px solid #655273; border-radius: 8px; }
+#root { position: absolute; inset: 88px 0 0; font-family: "Neko CJK", sans-serif; }
+@media (max-width: 480px) { header { padding: 10px 12px; } label { font-size: 0; } select { font-size: 12px; max-width: 110px; } }

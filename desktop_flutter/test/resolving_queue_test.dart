@@ -19,6 +19,7 @@ class QueueSource implements OnlineAudioSource {
     return ResolvedAudio(
       Uri.https('audio.example', '/${song.id}/$requests'),
       preferred,
+      headers: {'Referer': 'https://example.test/'},
     );
   }
 
@@ -27,6 +28,32 @@ class QueueSource implements OnlineAudioSource {
 }
 
 void main() {
+  test(
+    'resolved headers reach the audio loader and clear for local tracks',
+    () async {
+      final loaded = <ResolvedAudio>[];
+      final queue = ResolvingQueue(
+        source: QueueSource(),
+        load: (_) async => fail('URI-only loader must not discard headers'),
+        loadAudio: (audio) async => loaded.add(audio),
+      );
+      await queue.open([
+        Track.fromOnline(
+          const OnlineSong(
+            provider: MusicProvider.netease,
+            id: '1',
+            title: '歌',
+            artist: '歌手',
+          ),
+        ),
+      ], 0);
+      expect(loaded.single.headers, {'Referer': 'https://example.test/'});
+      await queue.open([
+        const Track(path: '/tmp/local.mp3', title: 'Local', artist: ''),
+      ], 0);
+      expect(loaded.last.headers, isEmpty);
+    },
+  );
   test(
     'editing queue preserves stream and next resolves fresh after reorder',
     () async {

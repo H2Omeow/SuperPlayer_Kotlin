@@ -5,9 +5,125 @@ import 'dart:typed_data';
 import 'package:xml/xml.dart';
 
 import '../domain/library.dart';
+import '../domain/audio_effects.dart';
 import 'account_store.dart';
 import 'android_datastore.dart';
 import 'cloud_library.dart';
+import 'legacy_audio_effects.dart';
+
+class LegacyPlaybackPreferences {
+  const LegacyPlaybackPreferences({
+    this.rate,
+    this.quality,
+    this.translation,
+    this.twoLines,
+  });
+
+  final double? rate;
+  final String? quality;
+  final bool? translation;
+  final bool? twoLines;
+  int get count => [rate, quality, translation, twoLines].nonNulls.length;
+
+  factory LegacyPlaybackPreferences.parse(Map<String, String> values) {
+    bool? boolean(String key) {
+      final value = values[key];
+      if (value == null) return null;
+      if (value != 'true' && value != 'false') {
+        throw FormatException('旧版设置 $key 不是有效布尔值。');
+      }
+      return value == 'true';
+    }
+
+    final rawRate = values['playback_speed'];
+    final rate = rawRate == null ? null : double.tryParse(rawRate);
+    if (rawRate != null &&
+        (rate == null || !rate.isFinite || rate < .5 || rate > 2)) {
+      throw const FormatException('旧版播放速度超出桌面端范围（0.5–2）。');
+    }
+    final quality = values['audio_quality'] ?? values['quality_level'];
+    if (quality != null && !RegExp(r'^[a-zA-Z0-9_]{1,40}$').hasMatch(quality)) {
+      throw const FormatException('旧版音质设置无效。');
+    }
+    return LegacyPlaybackPreferences(
+      rate: rate,
+      quality: quality,
+      translation: boolean('floating_translation'),
+      twoLines: boolean('floating_double_row'),
+    );
+  }
+}
+
+class LegacyPlaybackQueue {
+  const LegacyPlaybackQueue({
+    required this.tracks,
+    required this.session,
+    this.skipped = 0,
+    this.selectionChanged = false,
+  });
+
+  final List<Track> tracks;
+  final PlaybackSession session;
+  final int skipped;
+  final bool selectionChanged;
+
+  static LegacyPlaybackQueue? parse(Map<String, String> values) {
+    final raw = values['play_queue'];
+    if (raw == null) {
+      if (values.containsKey('play_index') ||
+          values.containsKey('play_position')) {
+        throw const FormatException('旧版播放状态缺少队列。');
+      }
+      return null;
+    }
+    final rows = jsonDecode(raw);
+    if (rows is! List ||
+        rows.length > PlaybackSession.maxQueueLength ||
+        rows.any((row) => row is! Map<String, dynamic>)) {
+      throw const FormatException('旧版播放队列结构无效。');
+    }
+    if (rows.isEmpty) return null;
+    final index = int.tryParse(values['play_index'] ?? '0');
+    final position = int.tryParse(values['play_position'] ?? '0');
+    if (index == null ||
+        index < 0 ||
+        index >= rows.length ||
+        position == null ||
+        position < 0 ||
+        position > PlaybackSession.maxPosition.inMilliseconds) {
+      throw const FormatException('旧版播放队列索引或进度无效。');
+    }
+    final tracks = <Track>[];
+    final originalIndices = <int>[];
+    for (var ordinal = 0; ordinal < rows.length; ordinal++) {
+      final track = CloudLibrary.decodeSong(
+        rows[ordinal] as Map<String, dynamic>,
+      );
+      if (track == null) continue;
+      tracks.add(track);
+      originalIndices.add(ordinal);
+    }
+    if (tracks.isEmpty) {
+      throw const FormatException('旧版播放队列没有可识别的音源，未替换当前队列。');
+    }
+    var selected = originalIndices.indexOf(index);
+    final selectionChanged = selected < 0;
+    if (selectionChanged) {
+      selected = originalIndices.indexWhere((ordinal) => ordinal > index);
+      if (selected < 0) selected = 0;
+    }
+    return LegacyPlaybackQueue(
+      tracks: tracks,
+      session: PlaybackSession(
+        paths: tracks.map((track) => track.path).toList(),
+        index: selected,
+        position: Duration(milliseconds: selectionChanged ? 0 : position),
+      ),
+      skipped: rows.length - tracks.length,
+      selectionChanged: selectionChanged,
+    );
+  }
+}
 
 class LegacyImport {
   LegacyImport({
@@ -17,6 +133,9 @@ class LegacyImport {
     this.siteToken,
     this.platform,
     this.skippedSongs = 0,
+    this.playback = const LegacyPlaybackPreferences(),
+    this.queue,
+    this.effects,
   });
   final Map<String, dynamic> library;
   final Map<String, String>? netease;
@@ -24,6 +143,9 @@ class LegacyImport {
   final String? siteToken;
   final int? platform;
   final int skippedSongs;
+  final LegacyPlaybackPreferences playback;
+  final LegacyPlaybackQueue? queue;
+  final AudioEffects? effects;
   LibraryData get decoded => CloudLibrary.decode(library);
   bool get hasCredentials =>
       netease != null || kugou.isNotEmpty || siteToken != null;
@@ -32,6 +154,9 @@ class LegacyImport {
   static Future<LegacyImport> readFiles(
     List<String> paths, {
     bool includeCredentials = false,
+    bool includeSettings = false,
+    bool includeQueue = false,
+    bool includeEffects = false,
   }) async {
     if (paths.isEmpty || paths.length > 8) {
       throw const FormatException('请选择 1–8 个旧版备份文件。');
@@ -90,7 +215,15 @@ class LegacyImport {
         final parsed = extension == 'properties'
             ? properties(content)
             : extension == 'pb' || extension == 'preferences_pb'
-            ? AndroidDataStore.stringPreferences(content)
+            ? {
+                for (final entry in AndroidDataStore.preferences(
+                  content,
+                ).entries)
+                  if (entry.value is String ||
+                      entry.value is bool ||
+                      entry.value is num)
+                    entry.key: entry.value.toString(),
+              }
             : androidPreferences(utf8.decode(content));
         for (final entry in parsed.entries) {
           if (values.containsKey(entry.key)) {
@@ -168,11 +301,19 @@ class LegacyImport {
         AccountStore.validateSiteToken(token);
       }
     }
+    final playback = includeSettings
+        ? LegacyPlaybackPreferences.parse(values)
+        : const LegacyPlaybackPreferences();
+    final queue = includeQueue ? LegacyPlaybackQueue.parse(values) : null;
+    final effects = includeEffects ? LegacyAudioEffects.parse(values) : null;
     if (library == null &&
         netease == null &&
         credentials.isEmpty &&
-        (token == null || token.isEmpty)) {
-      throw const FormatException('未找到可导入内容；账号文件需要先勾选导入凭据。');
+        (token == null || token.isEmpty) &&
+        playback.count == 0 &&
+        queue == null &&
+        effects == null) {
+      throw const FormatException('未找到可导入内容；账号、播放设置、队列或音效需要先勾选对应导入选项。');
     }
     final safeLibrary = {
       for (final key in ['favorites', 'history', 'playlists'])
@@ -201,6 +342,9 @@ class LegacyImport {
       siteToken: token?.isEmpty == true ? null : token,
       platform: platform,
       skippedSongs: skipped,
+      playback: playback,
+      queue: queue,
+      effects: effects,
     );
   }
 
@@ -249,14 +393,30 @@ class LegacyImport {
     }
     final values = <String, String>{};
     for (final element in root.childElements) {
-      if (element.name.qualified != 'string') continue;
+      final type = element.name.qualified;
+      if (!['string', 'boolean', 'int', 'long', 'float'].contains(type)) {
+        continue;
+      }
       final key = element.getAttribute('name');
       if (key == null ||
           values.containsKey(key) ||
           element.childElements.isNotEmpty) {
         throw const FormatException('SharedPreferences 字段无效或重复。');
       }
-      values[key] = element.innerText;
+      final value = type == 'string'
+          ? element.innerText
+          : element.getAttribute('value');
+      if (value == null ||
+          (type != 'string' && element.innerText.trim().isNotEmpty) ||
+          (type == 'boolean' && value != 'true' && value != 'false') ||
+          ((type == 'int' || type == 'long') && int.tryParse(value) == null) ||
+          (type == 'int' &&
+              (int.parse(value) < -2147483648 ||
+                  int.parse(value) > 2147483647)) ||
+          (type == 'float' && !(double.tryParse(value)?.isFinite ?? false))) {
+        throw const FormatException('SharedPreferences 值类型无效。');
+      }
+      values[key] = value;
     }
     return values;
   }

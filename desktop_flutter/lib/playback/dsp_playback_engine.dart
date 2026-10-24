@@ -21,6 +21,23 @@ class DspPlaybackEngine extends PlaybackEngine {
     _queue = ResolvingQueue(
       source: onlineSource,
       load: (uri) async => _start(uri, Duration.zero, play: _playOnLoad),
+      loadAudio: (audio) async {
+        if (audio.headers.entries.any(
+          (entry) =>
+              !RegExp(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$").hasMatch(entry.key) ||
+              entry.value.contains(RegExp(r'[\r\n]')),
+        )) {
+          throw const FormatException('音频请求头无效。');
+        }
+        final previous = _headers;
+        _headers = audio.headers;
+        try {
+          await _start(audio.uri, Duration.zero, play: _playOnLoad);
+        } catch (_) {
+          _headers = previous;
+          rethrow;
+        }
+      },
     );
   }
   late final ResolvingQueue _queue;
@@ -31,6 +48,7 @@ class DspPlaybackEngine extends PlaybackEngine {
   Future<void>? _pump;
   Timer? _ticker;
   Uri? _uri;
+  Map<String, String> _headers = const {};
   int _generation = 0;
   bool _disposed = false;
   bool _playing = false;
@@ -66,9 +84,13 @@ class DspPlaybackEngine extends PlaybackEngine {
   String? get error => _error;
 
   static String executable(String name) {
-    if (name == 'ffmpeg' &&
-        (Platform.environment['NEKOPLAYER_FFMPEG'] ?? '').isNotEmpty) {
-      return Platform.environment['NEKOPLAYER_FFMPEG']!;
+    final override = switch (name) {
+      'ffmpeg' => Platform.environment['NEKOPLAYER_FFMPEG'],
+      'ffprobe' => Platform.environment['NEKOPLAYER_FFPROBE'],
+      _ => null,
+    };
+    if (override != null && override.isNotEmpty) {
+      return override;
     }
     final filename = '$name${Platform.isWindows ? '.exe' : ''}';
     final bundled = paths.join(
@@ -82,7 +104,14 @@ class DspPlaybackEngine extends PlaybackEngine {
   List<String> inputOptions(Uri uri) => [
     '-protocol_whitelist',
     uri.scheme == 'file' ? 'file,pipe' : 'http,https,tcp,tls',
+    if (uri.scheme == 'https') ...['-tls_verify', '1'],
     if (uri.scheme != 'file') ...['-rw_timeout', '15000000'],
+    if (uri.scheme != 'file' && _headers.isNotEmpty) ...[
+      '-headers',
+      _headers.entries
+          .map((entry) => '${entry.key}: ${entry.value}\r\n')
+          .join(),
+    ],
   ];
 
   Future<Duration> probe(Uri uri) async {
@@ -91,6 +120,8 @@ class DspPlaybackEngine extends PlaybackEngine {
       process = await Process.start(executable('ffprobe'), [
         '-v',
         'error',
+        '-threads',
+        '1',
         ...inputOptions(uri),
         '-show_entries',
         'format=duration',

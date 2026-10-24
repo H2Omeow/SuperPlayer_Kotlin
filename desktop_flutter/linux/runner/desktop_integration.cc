@@ -262,6 +262,7 @@ static GVariant* get_property(GDBusConnection*, const gchar*, const gchar*, cons
   if (name == "MaximumRate") return g_variant_new_double(2);
   if (name == "Shuffle") return g_variant_new_boolean(self->shuffle);
   if (name == "CanControl" || name == "CanPlay") return g_variant_new_boolean(TRUE);
+  if (name == "CanSeek") return g_variant_new_boolean(self->has_track && self->duration > 0);
   return g_variant_new_boolean(self->has_track);
 }
 
@@ -376,6 +377,12 @@ static void create_lyrics(DesktopIntegration* self) {
   GtkCssProvider* css = gtk_css_provider_new();
   gtk_css_provider_load_from_data(css, "window { background-color: rgba(17,17,22,0.82); border-radius: 14px; }", -1, nullptr);
   gtk_style_context_add_provider(gtk_widget_get_style_context(self->lyrics_window), GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  for (auto* label : {self->lyric, self->next_lyric}) {
+    GtkCssProvider* font_css = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(font_css, "label { font-family: 'Noto Sans CJK SC', sans-serif; }", -1, nullptr);
+    gtk_style_context_add_provider(gtk_widget_get_style_context(label), GTK_STYLE_PROVIDER(font_css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(font_css);
+  }
   g_object_unref(css);
 }
 

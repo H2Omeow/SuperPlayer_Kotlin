@@ -55,10 +55,11 @@ class SiteController extends ChangeNotifier {
   });
 
   Future<void> _accept(String token) async {
+    final previous = accounts.siteToken;
     AccountStore.validateSiteToken(token);
     final verified = await client.me(token);
     if (_disposed) return;
-    await accounts.update(siteToken: token);
+    await accounts.update(siteToken: token, expectedSiteToken: previous);
     user = verified;
     message = '本站登录成功；云同步需手动触发。';
   }
@@ -154,49 +155,46 @@ class SiteController extends ChangeNotifier {
     final token = accounts.siteToken;
     final remote = await client.pull(token);
     if (_disposed || token != accounts.siteToken) return;
+    CloudLibrary.decode(remote);
     final remoteCookies = remote['kgCookies'] is List
         ? remote['kgCookies'] as List
         : const [];
-    final hasLocalKugou = [
-      0,
-      1,
-    ].any((platform) => (accounts.kugou(platform)['token'] ?? '').isNotEmpty);
     final remotePlatform = remote['kgPlatform'] == 1 ? 1 : 0;
     if (includeCredentials) {
-      final nc = remote['ncCookie'] as String? ?? '';
-      if (!accounts.neteaseLoggedIn && nc.isNotEmpty) {
-        await accounts.update(netease: AccountStore.parseCookies(nc));
+      Map<String, String> parse(Object? value) {
+        if (value == null || value == '') return {};
+        if (value is! String) throw const FormatException('云端登录凭据格式异常。');
+        return AccountStore.parseCookies(value);
       }
-      for (var platform = 0; platform < 2; platform++) {
-        if ((accounts.kugou(platform)['token'] ?? '').isNotEmpty ||
-            platform >= remoteCookies.length ||
-            remoteCookies[platform] is! String ||
-            (remoteCookies[platform] as String).isEmpty) {
-          continue;
-        }
-        final values = AccountStore.parseCookies(
-          remoteCookies[platform] as String,
-        );
-        await accounts.update(
-          kugou: values,
-          platform: platform,
-          selectPlatform: false,
-        );
+
+      final nc = parse(remote['ncCookie']);
+      if (remote['kgCookies'] != null &&
+          (remote['kgCookies'] is! List || remoteCookies.length > 2)) {
+        throw const FormatException('云端酷狗账号槽位无效。');
       }
-      if (!hasLocalKugou) {
-        final legacyToken = remote['kgToken'];
-        if ((accounts.kugou(remotePlatform)['token'] ?? '').isEmpty &&
-            legacyToken is String &&
-            legacyToken.isNotEmpty) {
-          await accounts.update(
-            kugou: AccountStore.parseCookies('token=$legacyToken'),
-            platform: remotePlatform,
-            selectPlatform: false,
-          );
-        }
-        await accounts.update(platform: remotePlatform);
+      final sessions = [
+        for (var platform = 0; platform < 2; platform++)
+          parse(
+            platform < remoteCookies.length ? remoteCookies[platform] : null,
+          ),
+      ];
+      final legacyToken = remote['kgToken'];
+      if (legacyToken != null && legacyToken is! String) {
+        throw const FormatException('云端酷狗凭据格式异常。');
       }
+      if ((sessions[remotePlatform]['token'] ?? '').isEmpty &&
+          legacyToken is String &&
+          legacyToken.isNotEmpty) {
+        sessions[remotePlatform].addAll(parse('token=$legacyToken'));
+      }
+      await accounts.importMissingSessions(
+        netease: nc,
+        kugou: sessions,
+        preferredPlatform: remotePlatform,
+        expectedSiteToken: token,
+      );
     }
+    if (_disposed || token != accounts.siteToken) return;
     await player.mergeCloud(remote);
     if (_disposed || token != accounts.siteToken) return;
     final merged = CloudLibrary.encode(player.snapshot, remote);
@@ -219,6 +217,7 @@ class SiteController extends ChangeNotifier {
       merged['kgToken'] = accounts.kugou()['token'] ?? remote['kgToken'] ?? '';
     }
     await client.push(token, merged);
+    if (_disposed || token != accounts.siteToken) return;
     message =
         '云端数据合并成功；本地文件路径不会上传。${includeCredentials ? '已按你的选择同步平台凭据。' : '未上传本机平台凭据。'}';
   });

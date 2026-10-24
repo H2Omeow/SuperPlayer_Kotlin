@@ -165,6 +165,59 @@ void main() {
     );
 
     test(
+      'TLS failure during login preserves the verified account without retrying',
+      () async {
+        await site.importToken(token);
+        requests.clear();
+        final previousUser = site.user;
+        final previousLibrary = player.snapshot.encode();
+        final previousWrites = library.writes;
+        handler = (_) async => throw const HandshakeException(
+          'CERTIFICATE_VERIFY_FAILED: certificate has expired',
+        );
+
+        await site.importToken('pending-site-session-123');
+
+        expect(accounts.siteToken, token);
+        expect(site.user, same(previousUser));
+        expect(site.busy, isFalse);
+        expect(site.message, contains('TLS'));
+        expect(site.message, isNot(contains('pending-site-session-123')));
+        expect(requests, hasLength(1));
+        expect(requests.single.uri.path, '/auth/sso/me');
+        expect(player.snapshot.encode(), previousLibrary);
+        expect(library.writes, previousWrites);
+      },
+    );
+
+    test(
+      'TLS failure during cloud pull prevents local mutation and any push',
+      () async {
+        await accounts.update(
+          siteToken: token,
+          netease: {'MUSIC_U': 'local-secret'},
+        );
+        final previousLibrary = player.snapshot.encode();
+        final previousWrites = library.writes;
+        handler = (_) async => throw const HandshakeException(
+          'CERTIFICATE_VERIFY_FAILED: certificate has expired',
+        );
+
+        await site.sync(includeCredentials: true);
+
+        expect(accounts.siteToken, token);
+        expect(accounts.netease['MUSIC_U'], 'local-secret');
+        expect(player.snapshot.encode(), previousLibrary);
+        expect(library.writes, previousWrites);
+        expect(requests, hasLength(1));
+        expect(requests.single.method, 'GET');
+        expect(requests.single.uri.path, '/user/data');
+        expect(site.busy, isFalse);
+        expect(site.message, contains('TLS'));
+      },
+    );
+
+    test(
       'sync preserves local credentials by default without uploading them',
       () async {
         await accounts.update(
@@ -290,6 +343,66 @@ void main() {
       expect(requests, hasLength(1));
       expect(site.message, isNot(contains('合并成功')));
     });
+
+    for (final invalid in [
+      {'favorites': 'invalid', 'ncCookie': 'MUSIC_U=remote'},
+      {
+        'ncCookie': 'MUSIC_U=remote',
+        'kgCookies': ['token=valid', 'token=bad value'],
+      },
+      {'ncCookie': 'MUSIC_U=remote', 'kgCookies': 'invalid'},
+    ]) {
+      test(
+        'malformed cloud data never partially imports credentials: $invalid',
+        () async {
+          await accounts.update(siteToken: token);
+          handler = (_) async => {'code': 0, 'data': invalid};
+          await site.sync(includeCredentials: true);
+          expect(accounts.neteaseLoggedIn, isFalse);
+          expect(accounts.kugou(0)['token'], isNull);
+          expect(accounts.kugou(1)['token'], isNull);
+          expect(player.tracks, isEmpty);
+          expect(requests, hasLength(1));
+          expect(site.message, isNot(contains('合并成功')));
+        },
+      );
+    }
+
+    test('changed site account discards an outstanding pull', () async {
+      await accounts.update(siteToken: token);
+      handler = (_) async {
+        await accounts.update(siteToken: 'new-site-session-123');
+        return {
+          'code': 0,
+          'data': {
+            'favorites': [remoteSong('2')],
+            'ncCookie': 'MUSIC_U=old-remote',
+          },
+        };
+      };
+      await site.sync(includeCredentials: true);
+      expect(player.tracks, isEmpty);
+      expect(accounts.neteaseLoggedIn, isFalse);
+      expect(requests, hasLength(1));
+    });
+
+    test(
+      'login verification cannot replace a site account changed while waiting',
+      () async {
+        await accounts.update(siteToken: token);
+        handler = (_) async {
+          await accounts.update(siteToken: 'new-site-session-123');
+          return {
+            'code': 0,
+            'user': {'id': 'old-remote'},
+          };
+        };
+        await site.importToken('pending-site-session-123');
+        expect(accounts.siteToken, 'new-site-session-123');
+        expect(site.user, isNull);
+        expect(site.message, contains('账号已切换'));
+      },
+    );
 
     test(
       'failed local save prevents push and remote rejection is not success',

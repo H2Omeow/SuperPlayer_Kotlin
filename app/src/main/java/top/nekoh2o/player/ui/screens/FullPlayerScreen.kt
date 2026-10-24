@@ -65,6 +65,7 @@ import top.nekoh2o.player.ui.PlayMode
 import top.nekoh2o.player.ui.PlayerViewModel
 import android.provider.Settings
 import androidx.compose.material.icons.filled.Comment
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Favorite
@@ -95,6 +96,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
     var showQualityDialog by remember { mutableStateOf(false) }
     var showComments by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
+    var showDynamicLyrics by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val activeColor = MaterialTheme.colorScheme.primary
     val configuration = LocalConfiguration.current
@@ -134,6 +136,7 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                 onShowTimerDialog = { showTimerDialog = true },
                 onShowQualityDialog = { showQualityDialog = true },
                 onShowComments = { showComments = true },
+                onDynamicLyrics = { showDynamicLyrics = true },
                 onShowFloatingPermDialog = { showFloatingPermDialog = true },
                 context = context
             )
@@ -152,12 +155,21 @@ fun FullPlayerScreen(vm: PlayerViewModel, onClose: () -> Unit) {
                 onShowTimerDialog = { showTimerDialog = true },
                 onShowQualityDialog = { showQualityDialog = true },
                 onShowComments = { showComments = true },
+                onDynamicLyrics = { showDynamicLyrics = true },
                 onShowFloatingPermDialog = { showFloatingPermDialog = true },
                 context = context
             )
         }
     }
 
+    if (showDynamicLyrics) DynamicLyricsScreen(
+        state = state,
+        onClose = { showDynamicLyrics = false },
+        onToggle = vm::togglePlay,
+        onPrevious = vm::prev,
+        onNext = vm::next,
+        onSeek = vm::seekTo
+    )
     if (showComments && cur != null) SongCommentsSheet(cur) { showComments = false }
     if (showQueue) {
         QueueSheet(vm, onDismiss = { showQueue = false })
@@ -709,6 +721,7 @@ private fun LandscapePlayerLayout(
     cur: top.nekoh2o.player.data.model.Song?,
     activeColor: Color,
     onClose: () -> Unit,
+    onDynamicLyrics: () -> Unit,
     onShowQueue: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onShowTimerDialog: () -> Unit,
@@ -733,6 +746,10 @@ private fun LandscapePlayerLayout(
                 IconButton(onClick = onClose) {
                     Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "收起",
                         tint = TextMain)
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onDynamicLyrics) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = "动态歌词", tint = TextMain)
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -899,6 +916,7 @@ private fun PortraitPlayerLayout(
     showLyrics: Boolean,
     onToggleLyrics: () -> Unit,
     onClose: () -> Unit,
+    onDynamicLyrics: () -> Unit,
     onShowQueue: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onShowTimerDialog: () -> Unit,
@@ -918,6 +936,9 @@ private fun PortraitPlayerLayout(
                     tint = TextMain)
             }
             Spacer(Modifier.weight(1f))
+            IconButton(onClick = onDynamicLyrics) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = "动态歌词", tint = TextMain)
+            }
         }
 
         Spacer(Modifier.height(12.dp))

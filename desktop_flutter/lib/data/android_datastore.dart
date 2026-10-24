@@ -2,12 +2,17 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 class AndroidDataStore {
-  static Map<String, String> stringPreferences(Uint8List bytes) {
+  static Map<String, String> stringPreferences(Uint8List bytes) => {
+    for (final entry in preferences(bytes).entries)
+      if (entry.value is String) entry.key: entry.value as String,
+  };
+
+  static Map<String, Object> preferences(Uint8List bytes) {
     if (bytes.length > 8 * 1024 * 1024) {
       throw const FormatException('DataStore 备份过大。');
     }
     final reader = _ProtoReader(bytes);
-    final result = <String, String>{};
+    final result = <String, Object>{};
     final keys = <String>{};
     while (!reader.done) {
       final tag = reader.tag();
@@ -17,7 +22,7 @@ class AndroidDataStore {
       }
       final entry = _ProtoReader(reader.message());
       String? key;
-      String? value;
+      Object? value;
       var hasValue = false;
       while (!entry.done) {
         final field = entry.tag();
@@ -27,7 +32,7 @@ class AndroidDataStore {
         } else if (field == 18) {
           if (hasValue) throw const FormatException('重复 DataStore 配置值。');
           hasValue = true;
-          value = _stringValue(entry.message());
+          value = _value(entry.message());
         } else {
           entry.skip(field);
         }
@@ -43,9 +48,9 @@ class AndroidDataStore {
     return result;
   }
 
-  static String? _stringValue(Uint8List bytes) {
+  static Object? _value(Uint8List bytes) {
     final reader = _ProtoReader(bytes);
-    String? result;
+    Object? result;
     var populated = false;
     while (!reader.done) {
       final tag = reader.tag();
@@ -58,10 +63,49 @@ class AndroidDataStore {
         if (populated) throw const FormatException('DataStore 值存在歧义。');
         populated = true;
       }
-      if (tag == 42) {
-        result = utf8.decode(reader.message());
-      } else {
-        reader.skip(tag);
+      switch (tag) {
+        case 8:
+          final value = reader.varint();
+          if (value != 0 && value != 1) {
+            throw const FormatException('DataStore 布尔值无效。');
+          }
+          result = value == 1;
+        case 21:
+        case 57:
+          final data = reader.fixed(tag == 21 ? 4 : 8);
+          final value = tag == 21
+              ? data.getFloat32(0, Endian.little)
+              : data.getFloat64(0, Endian.little);
+          if (!value.isFinite) {
+            throw const FormatException('DataStore 浮点值无效。');
+          }
+          result = value;
+        case 24:
+          final value = reader.varint();
+          if (value < -2147483648 || value > 2147483647) {
+            throw const FormatException('DataStore 整数越界。');
+          }
+          result = value;
+        case 32:
+          result = reader.varint();
+        case 42:
+          result = utf8.decode(reader.message());
+        case 50:
+          final values = _ProtoReader(reader.message());
+          final strings = <String>{};
+          while (!values.done) {
+            final field = values.tag();
+            if (field == 10) {
+              strings.add(utf8.decode(values.message()));
+            } else {
+              values.skip(field);
+            }
+          }
+          result = strings;
+        case 66:
+          result = Uint8List.fromList(reader.message());
+        default:
+          reader.skip(tag);
       }
     }
     if (!populated) throw const FormatException('DataStore 配置缺少值。');
@@ -103,6 +147,15 @@ class _ProtoReader {
       throw const FormatException('DataStore 备份已截断。');
     }
     final result = Uint8List.sublistView(bytes, position, position + length);
+    position += length;
+    return result;
+  }
+
+  ByteData fixed(int length) {
+    if (length > bytes.length - position) {
+      throw const FormatException('DataStore 备份已截断。');
+    }
+    final result = ByteData.sublistView(bytes, position, position + length);
     position += length;
     return result;
   }

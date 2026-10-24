@@ -3,6 +3,9 @@ project("nekoplayer_audio_effects")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../../native_plugins"
+    "${CMAKE_CURRENT_BINARY_DIR}/native_plugins")
+
 add_library(nekoplayer_audio_effects SHARED
     native-audio-effects.cpp
 )

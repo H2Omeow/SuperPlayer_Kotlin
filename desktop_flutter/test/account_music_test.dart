@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nekoplayer_desktop/data/account_music_repository.dart';
 import 'package:nekoplayer_desktop/domain/online_music.dart';
+import 'package:nekoplayer_desktop/domain/library.dart';
 import 'package:nekoplayer_desktop/player_controller.dart';
 import 'package:nekoplayer_desktop/ui/account_music_page.dart';
 
@@ -20,6 +21,35 @@ Map<String, dynamic> ncSong(String id) => {
   'al': {'id': 4, 'name': '专辑'},
 };
 
+class SyncAccountRepository extends AccountMusicRepository {
+  SyncAccountRepository(super.catalog);
+  final requests = <(AccountCollection, int)>[];
+
+  @override
+  Future<AccountPage<AccountPlaylist>> playlists(
+    MusicProvider provider,
+    int page, {
+    bool following = false,
+  }) async => const AccountPage([]);
+
+  @override
+  Future<AccountPage<OnlineSong>> collection(
+    AccountCollection kind,
+    int page, {
+    MusicProvider provider = MusicProvider.netease,
+  }) async {
+    requests.add((kind, page));
+    return AccountPage([
+      OnlineSong(
+        provider: provider,
+        id: '$page',
+        title: '歌曲$page',
+        artist: 'Neko',
+      ),
+    ], hasMore: page == 1);
+  }
+}
+
 void main() {
   late CommentCatalog catalog;
   late AccountMusicRepository repository;
@@ -28,6 +58,179 @@ void main() {
     await catalog.accounts.initialize();
     repository = AccountMusicRepository(catalog);
   });
+
+  testWidgets(
+    'full playlist save fetches unloaded pages without autoplay on compact high text scale',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 480));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final store = MemoryStore();
+      final engine = FakeEngine();
+      final player = PlayerController(engine: engine, store: store);
+      await player.initialize();
+      final requested = <int>[];
+      try {
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(2)),
+              child: child!,
+            ),
+            home: AccountMusicPage(
+              repository: repository,
+              player: player,
+              onComments: (_) {},
+              title: '完整歌单',
+              collectionId: '123',
+              songLoader: (page) async {
+                requested.add(page);
+                return AccountPage([
+                  OnlineSong(
+                    provider: MusicProvider.netease,
+                    id: '$page',
+                    title: '歌曲$page',
+                    artist: 'Neko',
+                  ),
+                ], hasMore: page == 1);
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final save = find.text('保存全部歌曲到本机歌单');
+        await tester.ensureVisible(save);
+        await tester.pumpAndSettle();
+        await tester.tap(save);
+        await tester.pumpAndSettle();
+        expect(find.text('将全部歌曲合并到本机歌单？'), findsOneWidget);
+        await tester.ensureVisible(find.text('开始同步'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('开始同步'));
+        await tester.pumpAndSettle();
+        expect(requested, [1, 1, 2]);
+        expect(player.playlists.single.paths, ['netease:1', 'netease:2']);
+        expect(engine.playing, isFalse);
+        expect(player.queue, isEmpty);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        await player.flushed;
+        player.dispose();
+        await tester.pump();
+      }
+    },
+  );
+
+  testWidgets(
+    'account likes and records sync all pages into the correct local collection',
+    (tester) async {
+      final source = SyncAccountRepository(catalog);
+      final store = MemoryStore();
+      final engine = FakeEngine();
+      final player = PlayerController(engine: engine, store: store);
+      await player.initialize();
+      try {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AccountMusicPage(
+              repository: source,
+              player: player,
+              onComments: (_) {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        for (final entry in [('红心歌曲', '全部同步到收藏'), ('最近一周记录', '全部同步到历史')]) {
+          await tester.tap(
+            find.byType(DropdownButtonFormField<AccountCollection>),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(entry.$1).last);
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text(entry.$2));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(entry.$2));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('开始同步'));
+          await tester.pumpAndSettle();
+        }
+        expect(player.favorites, {'netease:1', 'netease:2'});
+        expect(player.history, ['netease:1', 'netease:2']);
+        expect(source.requests, [
+          (AccountCollection.likes, 1),
+          (AccountCollection.likes, 1),
+          (AccountCollection.likes, 2),
+          (AccountCollection.history, 1),
+          (AccountCollection.history, 1),
+          (AccountCollection.history, 2),
+        ]);
+        expect(player.playlists, isEmpty);
+        expect(engine.playing, isFalse);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        await player.flushed;
+        player.dispose();
+        await tester.pump();
+      }
+    },
+  );
+
+  testWidgets(
+    'account song actions expose download, queue and persistent favorites',
+    (tester) async {
+      const song = OnlineSong(
+        provider: MusicProvider.netease,
+        id: '42',
+        title: 'Account song',
+        artist: 'Neko',
+      );
+      final store = MemoryStore();
+      final player = PlayerController(engine: FakeEngine(), store: store);
+      await player.initialize();
+      OnlineSong? downloaded;
+      OnlineSong? commented;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AccountMusicPage(
+            repository: repository,
+            player: player,
+            onComments: (song) => commented = song,
+            onDownload: (song) => downloaded = song,
+            songLoader: (_) async => const AccountPage([song]),
+            title: 'Test playlist',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('查看评论'));
+      expect(commented, same(song));
+      await tester.tap(find.byTooltip('歌曲操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('下载歌曲'));
+      await tester.pumpAndSettle();
+      expect(downloaded, same(song));
+      expect(player.engine.playing, isFalse);
+      await tester.tap(find.byTooltip('歌曲操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      await player.flushed;
+      final saved = LibraryData.decode(store.value!);
+      expect(saved.favorites, contains(Track.fromOnline(song).path));
+      expect(saved.tracks.single.online!.id, '42');
+      await tester.tap(find.byTooltip('歌曲操作'));
+      await tester.pumpAndSettle();
+      expect(find.text('取消收藏'), findsOneWidget);
+      await tester.tap(find.text('加入播放队列'));
+      await tester.pumpAndSettle();
+      expect(player.queue.single.online!.id, '42');
+      await tester.pumpWidget(const SizedBox());
+      player.dispose();
+    },
+  );
 
   test(
     'Kugou history, personal radio and followed artists use native response shapes',

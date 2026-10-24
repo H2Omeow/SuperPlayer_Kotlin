@@ -1,0 +1,8 @@
+{
+  global:
+    neko_plugin_create;
+    neko_plugin_eval;
+    neko_plugin_close;
+    Java_top_nekoh2o_player_data_plugins_NativePluginVm_*;
+  local: *;
+};

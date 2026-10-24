@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nekoplayer_desktop/domain/audio_effects.dart';
 import 'package:nekoplayer_desktop/domain/library.dart';
@@ -10,6 +13,7 @@ class TestProfessional extends DspPlaybackEngine {
   final delegate = FakeEngine();
   bool failSeek = false;
   int stops = 0;
+  int opens = 0;
   @override
   bool get playing => delegate.playing;
   @override
@@ -19,8 +23,11 @@ class TestProfessional extends DspPlaybackEngine {
   @override
   String? get currentPath => delegate.currentPath;
   @override
-  Future<void> open(List<Track> tracks, int index, {bool play = true}) =>
-      delegate.open(tracks, index, play: play);
+  Future<void> open(List<Track> tracks, int index, {bool play = true}) async {
+    opens++;
+    await delegate.open(tracks, index, play: play);
+  }
+
   @override
   Future<void> pause() => delegate.pause();
   @override
@@ -53,12 +60,117 @@ void main() {
   late FakeEngine normal;
   late TestProfessional professional;
   late EffectsPlaybackEngine engine;
+  String? saved;
+  bool failWrite = false;
   setUp(() {
     normal = FakeEngine();
     professional = TestProfessional();
-    engine = EffectsPlaybackEngine(normal: normal, professional: professional);
+    saved = null;
+    failWrite = false;
+    engine = EffectsPlaybackEngine(
+      normal: normal,
+      professional: professional,
+      readSettings: () async => saved,
+      writeSettings: (value) async {
+        if (failWrite) throw StateError('disk full');
+        saved = value;
+      },
+    );
   });
   tearDown(() => engine.dispose());
+
+  test(
+    'parameter import preserves ordinary playback and persists without enabling DSP',
+    () async {
+      await engine.open(tracks, 1);
+      await engine.seek(const Duration(seconds: 42));
+      await engine.importParameters(
+        const AudioEffects(enabled: true, bass: 23, mastering: 34),
+      );
+      expect(engine.effects.enabled, isFalse);
+      expect(engine.effects.bass, 23);
+      expect(engine.active, same(normal));
+      expect(engine.playing, isTrue);
+      expect(engine.position, const Duration(seconds: 42));
+      expect(engine.index, 1);
+      expect(professional.opens, 0);
+      final restored = AudioEffects.fromJson(
+        jsonDecode(saved!) as Map<String, dynamic>,
+      );
+      expect(restored.enabled, isFalse);
+      expect(restored.mastering, 34);
+    },
+  );
+
+  test(
+    'parameter import preserves active DSP playback without reopening its stream',
+    () async {
+      await engine.open(tracks, 1);
+      await engine.configure(const AudioEffects(enabled: true));
+      await engine.seek(const Duration(seconds: 22));
+      await engine.importParameters(const AudioEffects(bass: 11));
+      expect(engine.effects.enabled, isTrue);
+      expect(engine.active, same(professional));
+      expect(engine.playing, isTrue);
+      expect(engine.position, const Duration(seconds: 22));
+      expect(engine.index, 1);
+      expect(professional.opens, 1);
+      expect(professional.effects.bass, 11);
+    },
+  );
+
+  test(
+    'parameter import reports persistence failure and supports explicit retry',
+    () async {
+      failWrite = true;
+      await expectLater(
+        engine.importParameters(const AudioEffects(bass: 19)),
+        throwsStateError,
+      );
+      expect(saved, isNull);
+      expect(engine.effectsError, contains('保存失败'));
+      failWrite = false;
+      await engine.importParameters(const AudioEffects(bass: 19));
+      expect(engine.effectsError, isNull);
+      expect(saved, isNotNull);
+    },
+  );
+
+  test('unreadable settings are protected against parameter import', () async {
+    saved = 'corrupt settings';
+    await engine.initializeEffects();
+    await expectLater(
+      engine.importParameters(const AudioEffects(bass: 19)),
+      throwsStateError,
+    );
+    expect(saved, 'corrupt settings');
+    expect(engine.effects.bass, 0);
+    expect(professional.opens, 0);
+  });
+
+  test(
+    'parameter import refuses a concurrent switch or disposed engine',
+    () async {
+      final pending = Completer<void>();
+      final other = EffectsPlaybackEngine(
+        normal: FakeEngine(),
+        professional: TestProfessional(),
+        writeSettings: (_) => pending.future,
+      );
+      final switching = other.configure(const AudioEffects());
+      await expectLater(
+        other.importParameters(const AudioEffects()),
+        throwsStateError,
+      );
+      pending.complete();
+      await switching;
+      other.dispose();
+      await expectLater(
+        other.importParameters(const AudioEffects()),
+        throwsStateError,
+      );
+    },
+  );
 
   test('switch preserves selected track, position and paused state', () async {
     await engine.open(tracks, 1);

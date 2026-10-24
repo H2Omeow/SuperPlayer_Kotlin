@@ -6,32 +6,84 @@ import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart';
 
 import '../domain/online_music.dart';
+import '../domain/music_plugin.dart';
+import '../domain/library.dart' show encodeLyrics;
 import 'account_store.dart';
 import 'native_crypto.dart';
 import 'catalog_transport.dart';
-import 'source_gateway.dart';
+import 'builtin_music_plugin.dart';
+import 'plugin_subscriptions.dart';
+import 'plugins/script_music_catalog.dart';
 import 'audio_cache.dart';
 export 'catalog_transport.dart' show CatalogRequest, CatalogTransport;
 
 class NativeMusicCatalog
-    implements MusicCatalog, OnlineAudioSource, OnlineDownloadSource {
+    implements
+        MusicCatalog,
+        PluginMusicCatalog,
+        OnlineAudioSource,
+        OnlineDownloadSource {
   NativeMusicCatalog({
     CatalogTransport? transport,
     int Function()? clock,
     AccountStore? accounts,
     this.initializeSessions = true,
-    SourceGateway? sourceGateway,
+    BuiltinMusicPlugin? musicPlugin,
+    this.subscriptions,
     this.cache,
   }) : _transport = transport ?? sendCatalogRequest,
        accounts = accounts ?? AccountStore(),
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch) {
-    gateway = sourceGateway ?? SourceGateway(accounts: this.accounts);
+    plugin = musicPlugin ?? BuiltinMusicPlugin(transport: _transport);
   }
 
   final CatalogTransport _transport;
   final int Function() _clock;
   final AccountStore accounts;
-  late final SourceGateway gateway;
+  late final BuiltinMusicPlugin plugin;
+  final PluginSubscriptions? subscriptions;
+  ScriptMusicCatalog get scripts => ScriptMusicCatalog(subscriptions!.runtime);
+
+  String _lxPlatform(MusicPluginSource source, OnlineSong song) {
+    final platform =
+        song.provider.gateway ??
+        (song.provider == MusicProvider.netease ? 'wy' : 'kg');
+    return platform == 'tx' && !source.lxSources.containsKey(platform)
+        ? 'qq'
+        : platform;
+  }
+
+  MusicPluginSource? _lxOverride(OnlineSong song) {
+    if (song.pluginSource?.scripted == true) return null;
+    if (song.pluginSource != null || song.provider.gateway != null) {
+      _pluginSource(song);
+    }
+    final platform =
+        song.provider.gateway ??
+        (song.provider == MusicProvider.netease ? 'wy' : 'kg');
+    return subscriptions?.sources
+        .where(
+          (source) =>
+              source.lx &&
+              (source.lxSources.containsKey(platform) ||
+                  platform == 'tx' && source.lxSources.containsKey('qq')),
+        )
+        .lastOrNull;
+  }
+
+  MusicPluginSource? _pluginSource(OnlineSong song) {
+    final reference = song.pluginSource;
+    if (subscriptions == null) return reference;
+    final id = reference?.id ?? song.provider.sourceId;
+    final current = subscriptions!.sources
+        .where((source) => source.id == id)
+        .firstOrNull;
+    if (current == null) {
+      throw const MusicSearchException('该音源订阅已停用或删除，请先在订阅管理中启用。');
+    }
+    return current;
+  }
+
   final bool initializeSessions;
   final AudioCache? cache;
   static const pageSize = 30;
@@ -770,25 +822,29 @@ class NativeMusicCatalog
   Future<ResolvedAudio> resolveDownload(OnlineSong song, String quality) =>
       _resolve(song, preferred: quality, download: true);
 
-  Future<ResolvedAudio> _resolve(
+  Future<_NativeAudioChoices> _discoverNative(
     OnlineSong song, {
-    required String preferred,
-    bool download = false,
+    required bool download,
+    bool Function()? accept,
   }) async {
-    if (song.provider.gateway != null) {
-      return _resolveGateway(song, preferred, download);
-    }
     if (initializeSessions) await initializeProvider(song.provider);
+    if (accept?.call() == false) {
+      throw const MusicSearchException('音质检查已取消。');
+    }
     final netease = song.provider == MusicProvider.netease;
     final platform = accounts.platform;
     final credential = netease
         ? accounts.netease['MUSIC_U'] ?? accounts.netease['MUSIC_A']
         : accounts.kugou()['token'];
+    final userId = netease ? null : accounts.kugou()['userid'];
     void checkSession() {
       final active = netease
           ? accounts.netease['MUSIC_U'] ?? accounts.netease['MUSIC_A']
           : accounts.kugou()['token'];
-      if ((!netease && accounts.platform != platform) || active != credential) {
+      if ((!netease &&
+              (accounts.platform != platform ||
+                  accounts.kugou()['userid'] != userId)) ||
+          active != credential) {
         throw const MusicSearchException('账号或平台已切换，请重新播放。');
       }
     }
@@ -855,6 +911,110 @@ class NativeMusicCatalog
           choices[quality] = hash;
         }
       }
+    }
+    checkSession();
+    return _NativeAudioChoices(choices, checkSession);
+  }
+
+  Future<List<AudioQuality>> downloadable(
+    OnlineSong song, {
+    bool Function()? accept,
+  }) async {
+    void checkAccepted() {
+      if (accept?.call() == false) {
+        throw const MusicSearchException('音质检查已取消。');
+      }
+    }
+
+    checkAccepted();
+    final scriptSource = song.pluginSource?.scripted == true
+        ? _pluginSource(song)
+        : null;
+    final lx = _lxOverride(song);
+    final discovered = song.provider.gateway == null && lx == null
+        ? await _discoverNative(song, download: true, accept: accept)
+        : null;
+    final result = <AudioQuality>[];
+    final qualities = scriptSource == null
+        ? lx == null
+              ? AudioQuality.supported(song.provider)
+              : scripts.lxQualities(lx, _lxPlatform(lx, song))
+        : scripts.qualities(scriptSource, song);
+    for (final quality in qualities) {
+      checkAccepted();
+      discovered?.checkSession();
+      if (discovered != null && !discovered.choices.containsKey(quality.id)) {
+        continue;
+      }
+      try {
+        final audio = await _resolve(
+          song,
+          preferred: quality.id,
+          download: true,
+          discovered: discovered,
+        );
+        checkAccepted();
+        discovered?.checkSession();
+        if (audio.quality == quality.id) {
+          result.add(
+            AudioQuality(
+              quality.id,
+              quality.label,
+              quality.rank,
+              size: audio.size,
+            ),
+          );
+        }
+      } on AudioUnavailableException {
+        checkAccepted();
+        discovered?.checkSession();
+      }
+    }
+    checkAccepted();
+    result.sort((first, second) => second.rank.compareTo(first.rank));
+    return result;
+  }
+
+  Future<ResolvedAudio> _resolve(
+    OnlineSong song, {
+    required String preferred,
+    bool download = false,
+    _NativeAudioChoices? discovered,
+  }) async {
+    if (song.pluginSource?.scripted == true) {
+      final source = _pluginSource(song);
+      if (source == null || subscriptions == null) {
+        throw const MusicSearchException('请先重新安装该音源插件。');
+      }
+      return scripts.resolve(source, song, preferred, exact: download);
+    }
+    final lx = _lxOverride(song);
+    if (lx != null) {
+      final result = await scripts.resolveLx(
+        lx,
+        _lxPlatform(lx, song),
+        song,
+        preferred,
+        exact: download,
+      );
+      return ResolvedAudio(
+        result.uri,
+        download ? preferred : result.quality,
+        size: result.size,
+        format: result.format,
+        headers: result.headers,
+      );
+    }
+    if (song.provider.gateway != null) {
+      return _resolvePlugin(song, preferred, download);
+    }
+    final available =
+        discovered ?? await _discoverNative(song, download: download);
+    final choices = available.choices;
+    final checkSession = available.checkSession;
+    checkSession();
+    final netease = song.provider == MusicProvider.netease;
+    if (!netease) {
       preferred =
           const {
             'standard': '128',
@@ -862,6 +1022,10 @@ class NativeMusicCatalog
             'exhigh': '320',
             'lossless': 'flac',
             'hires': 'high',
+            'jyeffect': 'viper_clear',
+            'sky': 'viper_atmos',
+            'jymaster': 'super',
+            'dolby': 'viper_atmos',
           }[preferred] ??
           preferred;
     }
@@ -998,7 +1162,7 @@ class NativeMusicCatalog
       }
     }
     if (fallback != null) return fallback;
-    throw const MusicSearchException('暂无当前账号可播放的完整音源；不播放试听片段。');
+    throw const AudioUnavailableException('暂无当前账号可播放的完整音源；不播放试听片段。');
   }
 
   @override
@@ -1011,17 +1175,50 @@ class NativeMusicCatalog
   }
 
   Future<String> _fetchLyrics(OnlineSong song) async {
-    if (song.provider.gateway != null) {
-      final body = await gateway.request('music/lyric', {
-        'source': song.provider.gateway!,
-        'musicId': song.id,
-      });
-      if (_number(body['code']) != 200) {
-        throw const MusicSearchException('音源歌词读取失败。');
+    if (song.pluginSource?.scripted == true) {
+      final source = _pluginSource(song);
+      if (source == null || subscriptions == null) {
+        throw const MusicSearchException('请先重新安装该音源插件。');
       }
-      return _text(body['lyric']);
+      return scripts.lyrics(source, song);
+    }
+    final lx = _lxOverride(song);
+    if (lx != null) {
+      final content = await scripts.lxLyrics(lx, _lxPlatform(lx, song), song);
+      if (content != null && content.isNotEmpty) return content;
+    }
+    if (song.provider.gateway != null) {
+      final body = await plugin.lyrics(song, source: _pluginSource(song));
+      return encodeLyrics(_text(body['lyric']), _text(body['tlyric']));
     }
     if (song.provider == MusicProvider.netease) {
+      try {
+        final body = await _request(
+          neteaseRequest('/api/song/lyric/v1', {
+            'id': song.id,
+            'cp': false,
+            'tv': 0,
+            'lv': 0,
+            'rv': 0,
+            'kv': 0,
+            'yv': 0,
+            'ytv': 0,
+            'yrv': 0,
+          }),
+        );
+        if (_number(body['code']) == 200) {
+          final timed = _text(_object(body['yrc'])['lyric']);
+          final original = timed.trim().isNotEmpty
+              ? timed
+              : _text(_object(body['lrc'])['lyric']);
+          if (original.trim().isNotEmpty) {
+            return encodeLyrics(
+              original,
+              _text(_object(body['tlyric'])['lyric']),
+            );
+          }
+        }
+      } on MusicSearchException catch (_) {}
       final body = await _request(
         neteaseRequest('/api/song/lyric', {
           'id': song.id,
@@ -1037,7 +1234,7 @@ class NativeMusicCatalog
       }
       final original = _text(_object(body['lrc'])['lyric']);
       final translated = _text(_object(body['tlyric'])['lyric']);
-      return translated.isEmpty ? original : '$original\n$translated';
+      return encodeLyrics(original, translated);
     }
     final body = await _request(
       _gateway(
@@ -1082,35 +1279,13 @@ class NativeMusicCatalog
       throw const MusicSearchException('请输入 1–200 字的关键词。');
     }
     if (provider.gateway != null) {
-      final body = await gateway.request('music/search', {
-        'platform': provider.gateway!,
-        'keyword': keyword,
-        'page': '$page',
-        'limit': '$pageSize',
-      });
-      if (_number(body['code']) != 200) {
-        throw const MusicSearchException('音源服务未返回搜索结果。');
+      final source = subscriptions?.sources
+          .where((item) => item.id == provider.sourceId)
+          .firstOrNull;
+      if (subscriptions != null && source == null) {
+        throw const MusicSearchException('内置订阅已停用，请先在订阅管理中启用。');
       }
-      final songs = _items(body['data'])
-          .map(
-            (item) => OnlineSong(
-              provider: provider,
-              id: _text(item['id']).isNotEmpty
-                  ? _text(item['id'])
-                  : _text(item['songId']),
-              title: _text(item['title']),
-              artist: _text(item['artist']),
-              album: _text(item['album']),
-              albumAudioId: _text(item['album_audio_id']),
-              artwork: _text(item['artwork']),
-            ),
-          )
-          .where((song) => song.id.isNotEmpty && song.title.isNotEmpty)
-          .toList();
-      return SearchPage(
-        songs: songs,
-        hasMore: songs.isNotEmpty && body['isEnd'] == false,
-      );
+      return _searchPlugin(provider, source, keyword, page);
     }
     try {
       final response = await _transport(
@@ -1130,6 +1305,109 @@ class NativeMusicCatalog
     } on FormatException {
       throw const MusicSearchException('音乐平台响应格式异常，请稍后重试。');
     }
+  }
+
+  @override
+  Future<SearchPage> searchPlugin(
+    MusicPluginSource source,
+    String keyword,
+    int page,
+  ) {
+    if (keyword.trim().isEmpty || keyword.length > 200 || page < 1) {
+      throw const MusicSearchException('请输入 1–200 字的关键词。');
+    }
+    final provider =
+        MusicProvider.values
+            .where((item) => item.gateway == source.platform)
+            .firstOrNull ??
+        MusicProvider.gatewayKugou;
+    final reference =
+        _pluginSource(
+          OnlineSong(
+            provider: provider,
+            id: '',
+            title: '',
+            artist: '',
+            pluginSource: source,
+          ),
+        ) ??
+        source;
+    if (!reference.capabilities.contains('search')) {
+      throw const MusicSearchException('该插件不支持歌曲搜索。');
+    }
+    if (reference.scripted) {
+      if (subscriptions == null) {
+        throw const MusicSearchException('音源脚本引擎未初始化。');
+      }
+      return scripts.search(reference, keyword.trim(), page);
+    }
+    if (reference.platform == 'all') {
+      return _searchAggregatePlugin(reference, keyword.trim(), page);
+    }
+    return _searchPlugin(provider, reference, keyword.trim(), page);
+  }
+
+  Future<SearchPage> _searchAggregatePlugin(
+    MusicPluginSource source,
+    String keyword,
+    int page,
+  ) async {
+    final pages = <SearchPage>[];
+    Object? failure;
+    for (final platform in source.supportedPlatforms) {
+      final provider = MusicProvider.values.firstWhere(
+        (item) => item.gateway == platform,
+      );
+      try {
+        pages.add(await _searchPlugin(provider, source, keyword, page));
+      } on Exception catch (error) {
+        failure = error;
+      }
+    }
+    if (pages.isEmpty && failure != null) throw failure;
+    return SearchPage(
+      songs: pages.expand((entry) => entry.songs).toList(),
+      hasMore: pages.any((entry) => entry.hasMore),
+    );
+  }
+
+  Future<SearchPage> _searchPlugin(
+    MusicProvider provider,
+    MusicPluginSource? source,
+    String keyword,
+    int page,
+  ) async {
+    final body = await plugin.request('music/search', {
+      'platform': provider.gateway!,
+      'keyword': keyword,
+      'page': '$page',
+      'limit': '$pageSize',
+    }, source: source);
+    if (_number(body['code']) != 200) {
+      throw const MusicSearchException('音源服务未返回搜索结果。');
+    }
+    final songs = _items(body['data'])
+        .map(
+          (item) => OnlineSong(
+            provider: provider,
+            id: _text(item['id']).isNotEmpty
+                ? _text(item['id'])
+                : _text(item['songId']),
+            title: _text(item['title']),
+            artist: _text(item['artist']),
+            album: _text(item['album']),
+            albumAudioId: _text(item['album_audio_id']),
+            artwork: _text(item['artwork']),
+            pluginSource: source,
+            pluginData: item,
+          ),
+        )
+        .where((song) => song.id.isNotEmpty && song.title.isNotEmpty)
+        .toList();
+    return SearchPage(
+      songs: songs,
+      hasMore: songs.isNotEmpty && body['isEnd'] == false,
+    );
   }
 
   CatalogRequest _neteaseRequest(String keyword, int page) {
@@ -1296,7 +1574,7 @@ class NativeMusicCatalog
     );
   }
 
-  Future<ResolvedAudio> _resolveGateway(
+  Future<ResolvedAudio> _resolvePlugin(
     OnlineSong song,
     String preferred,
     bool download,
@@ -1304,7 +1582,7 @@ class NativeMusicCatalog
     preferred =
         const {
           'standard': '128k',
-          'higher': '320k',
+          'higher': '192k',
           'exhigh': '320k',
           'lossless': 'flac',
           'hires': 'hires',
@@ -1315,14 +1593,11 @@ class NativeMusicCatalog
       if (!download) ...['hires', 'flac', '320k', '128k'],
     };
     for (final quality in choices) {
-      final body = await gateway.request('music/url', {
+      final body = await plugin.request('music/url', {
         'source': song.provider.gateway!,
         'musicId': song.id,
-        'quality': quality,
-      });
-      if ([401, 403, 429].contains(_number(body['code']))) {
-        throw const MusicSearchException('音源服务拒绝请求，请检查本站账号、权限或配额。');
-      }
+        'quality': BuiltinMusicPlugin.quality(quality),
+      }, source: _pluginSource(song));
       if (_number(body['code']) != 200 ||
           body['freeTrialInfo'] != null ||
           (_number(body['is_free_part']) ?? 0) > 0) {
@@ -1335,15 +1610,30 @@ class NativeMusicCatalog
           uri.userInfo.isNotEmpty) {
         continue;
       }
+      final returnedQuality = _text(body['quality']);
+      final actual = returnedQuality.isEmpty
+          ? quality
+          : const {
+                  'standard': '128k',
+                  'higher': '192k',
+                  'exhigh': '320k',
+                  'lossless': 'flac',
+                  'flac24bit': 'hires',
+                }[returnedQuality] ??
+                returnedQuality;
+      if (!const ['128k', '192k', '320k', 'flac', 'hires'].contains(actual) ||
+          download && actual != quality) {
+        continue;
+      }
       return ResolvedAudio(
         uri,
-        quality,
+        actual,
         size: _number(body['size']) ?? 0,
         format: _text(body['format']),
         checksum: _text(body['md5']),
       );
     }
-    throw const MusicSearchException('音源服务未返回可用的完整音频。');
+    throw const AudioUnavailableException('音源服务未返回可用的完整音频。');
   }
 
   Future<SearchVideoPage> searchVideos(
@@ -1355,16 +1645,14 @@ class NativeMusicCatalog
     if (keyword.isEmpty || keyword.length > 200 || page < 1) {
       throw const MusicSearchException('请输入 1–200 字的关键词。');
     }
-    final external = provider.gateway != null;
-    final body = await gateway
-        .request(external ? 'music/mv/search' : 'mv/search', {
-          external ? 'platform' : 'source': provider.gateway ?? provider.name,
-          'keyword': keyword,
-          'page': '$page',
-          if (external) 'limit': '$pageSize',
-        }, media: !external);
+    final body = await plugin.request('music/mv/search', {
+      'platform': BuiltinMusicPlugin.platformFor(provider),
+      'keyword': keyword,
+      'page': '$page',
+      'limit': '$pageSize',
+    });
     if (_number(body['code']) != 200) {
-      throw const MusicSearchException('MV 服务未返回搜索结果，请检查登录状态与配额。');
+      throw const MusicSearchException('内置插件未返回 MV 搜索结果，请稍后重试。');
     }
     final videos = _items(body['data'])
         .map(
@@ -1382,18 +1670,12 @@ class NativeMusicCatalog
   }
 
   Future<Uri> videoUrl(MusicVideo video) async {
-    final external = video.provider.gateway != null;
-    final body = await gateway.request(external ? 'music/mv/url' : 'mv/url', {
-      external ? 'platform' : 'source':
-          video.provider.gateway ?? video.provider.name,
+    final platform = BuiltinMusicPlugin.platformFor(video.provider);
+    final body = await plugin.request('music/mv/url', {
+      'platform': platform,
       'id': video.id,
-      if (external)
-        'quality': switch (video.provider.gateway) {
-          'wy' || 'tx' => '1080',
-          'kw' => 'MP4BD',
-          _ => '',
-        },
-    }, media: !external);
+      'quality': BuiltinMusicPlugin.videoQuality(platform),
+    });
     final uri = Uri.tryParse(_text(body['url']));
     if (_number(body['code']) != 200 ||
         uri == null ||
@@ -1413,4 +1695,10 @@ class NativeMusicCatalog
   static int? _number(Object? value) => int.tryParse(_text(value));
   static String _clean(String value) =>
       value.replaceAll(RegExp(r'</?em>', caseSensitive: false), '');
+}
+
+class _NativeAudioChoices {
+  const _NativeAudioChoices(this.choices, this.checkSession);
+  final Map<String, String> choices;
+  final void Function() checkSession;
 }

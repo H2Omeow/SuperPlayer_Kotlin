@@ -13,10 +13,12 @@ class CatalogBrowsePage extends StatefulWidget {
     required this.repository,
     required this.player,
     required this.onComments,
+    this.onDownload,
   });
   final CatalogBrowseRepository repository;
   final PlayerController player;
   final void Function(OnlineSong) onComments;
+  final void Function(OnlineSong)? onDownload;
   @override
   State<CatalogBrowsePage> createState() => _CatalogBrowsePageState();
 }
@@ -262,6 +264,7 @@ class _CatalogBrowsePageState extends State<CatalogBrowsePage> {
                                 repository: widget.repository.music,
                                 player: widget.player,
                                 onComments: widget.onComments,
+                                onDownload: widget.onDownload,
                                 title: item.name,
                                 collectionId:
                                     'browse-${item.kind.name}-${item.id}',

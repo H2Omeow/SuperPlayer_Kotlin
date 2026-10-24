@@ -9,6 +9,7 @@ import 'data/account_store.dart';
 import 'data/audio_downloader.dart';
 import 'data/library_store.dart';
 import 'domain/online_music.dart';
+import 'domain/library.dart' show parseLrc, renderLrc;
 
 enum DownloadPhase { queued, downloading, paused, failed, completed }
 
@@ -324,7 +325,12 @@ class DownloadController extends ChangeNotifier {
       if (_disposed) return;
       cancellation.check();
       if (lyrics.trim().isEmpty) return;
-      final bytes = utf8.encode(lyrics);
+      if (utf8.encode(lyrics).length > 2 * 1024 * 1024) {
+        throw const FormatException('Lyrics too large');
+      }
+      final lrc = renderLrc(parseLrc(lyrics));
+      if (lrc.isEmpty) return;
+      final bytes = utf8.encode(lrc);
       if (bytes.length > 2 * 1024 * 1024) {
         throw const FormatException('Lyrics too large');
       }

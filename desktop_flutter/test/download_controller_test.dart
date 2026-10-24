@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as paths;
 import 'package:nekoplayer_desktop/data/audio_downloader.dart';
 import 'package:nekoplayer_desktop/domain/online_music.dart';
+import 'package:nekoplayer_desktop/domain/library.dart';
 import 'package:nekoplayer_desktop/download_controller.dart';
 
 import 'fakes.dart';
@@ -25,6 +26,7 @@ class DownloadSource implements OnlineDownloadSource {
 
 class LyricsDownloadSource extends DownloadSource implements OnlineAudioSource {
   bool failLyrics = false;
+  String content = '[00:01.00]Original\n[00:01.00]翻译';
   @override
   Future<ResolvedAudio> resolve(
     OnlineSong song, {
@@ -33,7 +35,7 @@ class LyricsDownloadSource extends DownloadSource implements OnlineAudioSource {
   @override
   Future<String> lyrics(OnlineSong song) async {
     if (failLyrics) throw const MusicSearchException('lyrics unavailable');
-    return '[00:01.00]Original\n[00:01.00]翻译';
+    return content;
   }
 }
 
@@ -135,6 +137,60 @@ void main() {
       );
       await controller.flushed;
       expect(store.value, isNot(contains('audio.example')));
+    },
+  );
+
+  test(
+    'downloaded YRC envelopes become interoperable LRC with aligned translations',
+    () async {
+      controller.dispose();
+      final source = LyricsDownloadSource()
+        ..content = encodeLyrics(
+          '[1000,2000](1000,500,0)你(1500,1500,0)好',
+          '[00:01.100]Hello',
+        );
+      controller = DownloadController(
+        source: source,
+        store: store,
+        downloader: downloader,
+      );
+      await controller.initialize();
+      await controller.enqueue(song, directory.path, 'standard');
+      await waitFor(() => controller.tasks.single.lyricsOwned);
+      final task = controller.tasks.single;
+      final saved = await File(
+        paths.setExtension(task.path!, '.lrc'),
+      ).readAsString();
+      expect(saved, '[00:01.000]你好\n[00:01.000]Hello');
+      expect(saved, isNot(contains('nekoplayer.lyrics')));
+      expect(parseLrc(saved).single.translation, 'Hello');
+      expect(task.phase, DownloadPhase.completed);
+    },
+  );
+
+  test(
+    'untimed lyric responses do not create misleading empty sidecars',
+    () async {
+      controller.dispose();
+      controller = DownloadController(
+        source: LyricsDownloadSource()..content = '暂无歌词',
+        store: store,
+        downloader: downloader,
+      );
+      await controller.initialize();
+      await controller.enqueue(song, directory.path, 'standard');
+      await waitFor(
+        () =>
+            controller.tasks.single.phase == DownloadPhase.completed &&
+            !controller.isActive(controller.tasks.single),
+      );
+      final task = controller.tasks.single;
+      expect(task.lyricsOwned, isFalse);
+      expect(
+        await File(paths.setExtension(task.path!, '.lrc')).exists(),
+        isFalse,
+      );
+      expect(task.error, isNull);
     },
   );
 

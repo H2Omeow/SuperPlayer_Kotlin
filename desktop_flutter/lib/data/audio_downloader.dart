@@ -55,6 +55,7 @@ class AudioDownloader {
       return;
     }
     var uri = audio.uri;
+    final headers = Map<String, String>.from(audio.headers);
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 15);
     cancellation._client = client;
@@ -73,6 +74,7 @@ class AudioDownloader {
             .getUrl(uri)
             .timeout(const Duration(seconds: 20));
         request.followRedirects = false;
+        headers.forEach(request.headers.set);
         request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
         if (offset > 0) {
           request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-');
@@ -86,6 +88,15 @@ class AudioDownloader {
         final next = uri.resolve(location);
         if (uri.scheme == 'https' && next.scheme != 'https') {
           throw const MusicSearchException('拒绝不安全的下载重定向。');
+        }
+        if (uri.origin != next.origin) {
+          headers.removeWhere(
+            (name, _) => const {
+              'authorization',
+              'cookie',
+              'proxy-authorization',
+            }.contains(name.toLowerCase()),
+          );
         }
         uri = next;
       }

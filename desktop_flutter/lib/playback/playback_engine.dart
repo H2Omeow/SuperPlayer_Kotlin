@@ -46,6 +46,13 @@ class MediaKitEngine extends PlaybackEngine {
         if (_disposed) return;
         await _player.open(Media(uri.toString()), play: false);
       },
+      loadAudio: (audio) async {
+        if (_disposed) return;
+        await _player.open(
+          Media(audio.uri.toString(), httpHeaders: audio.headers),
+          play: false,
+        );
+      },
     );
     _subscriptions.addAll([
       _player.stream.playing.listen((value) {

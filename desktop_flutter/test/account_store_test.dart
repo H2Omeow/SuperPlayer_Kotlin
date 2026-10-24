@@ -20,6 +20,101 @@ class MemoryCredentials implements CredentialStorage {
 }
 
 void main() {
+  test('cloud sessions commit both slots in a single durable write', () async {
+    final storage = MemoryCredentials();
+    final accounts = AccountStore(storage: storage);
+    await accounts.initialize();
+    await accounts.update(siteToken: 'cloud-session-12345');
+    final writes = storage.writes;
+    await accounts.importMissingSessions(
+      netease: {'MUSIC_U': 'nc'},
+      kugou: [
+        {'token': 'standard', 'userid': '1'},
+        {'token': 'lite', 'userid': '2'},
+      ],
+      preferredPlatform: 1,
+      expectedSiteToken: accounts.siteToken,
+    );
+    expect(storage.writes, writes + 1);
+    expect(accounts.neteaseLoggedIn, isTrue);
+    expect(accounts.kugou(0)['token'], 'standard');
+    expect(accounts.kugou(1)['token'], 'lite');
+    expect(accounts.platform, 1);
+    final restored = AccountStore(storage: storage);
+    await restored.initialize();
+    expect(restored.kugou(1)['token'], 'lite');
+  });
+
+  test(
+    'cloud credential validation and storage failure leave every account untouched',
+    () async {
+      final storage = MemoryCredentials();
+      final accounts = AccountStore(storage: storage);
+      await accounts.initialize();
+      await accounts.update(siteToken: 'cloud-session-12345');
+      final before = storage.value;
+      await expectLater(
+        accounts.importMissingSessions(
+          netease: {'MUSIC_U': 'nc'},
+          kugou: [
+            {'token': 'valid'},
+            {'token': 'bad value'},
+          ],
+          preferredPlatform: 1,
+          expectedSiteToken: accounts.siteToken,
+        ),
+        throwsFormatException,
+      );
+      expect(accounts.neteaseLoggedIn, isFalse);
+      expect(accounts.kugou(0)['token'], isNull);
+      expect(storage.value, before);
+      storage.fail = true;
+      await expectLater(
+        accounts.importMissingSessions(
+          netease: {'MUSIC_U': 'nc'},
+          kugou: [
+            {'token': 'valid'},
+            {'token': 'lite'},
+          ],
+          preferredPlatform: 1,
+          expectedSiteToken: accounts.siteToken,
+        ),
+        throwsStateError,
+      );
+      expect(accounts.neteaseLoggedIn, isFalse);
+      expect(accounts.kugou(0)['token'], isNull);
+      expect(accounts.kugou(1)['token'], isNull);
+      expect(accounts.platform, 0);
+      expect(storage.value, before);
+    },
+  );
+
+  test(
+    'queued session guards reject stale imports and site verification',
+    () async {
+      final accounts = AccountStore();
+      await accounts.initialize();
+      const previous = 'old-site-session-123';
+      const next = 'new-site-session-123';
+      await accounts.update(siteToken: previous);
+      final switching = accounts.update(siteToken: next);
+      final importing = accounts.importMissingSessions(
+        netease: {'MUSIC_U': 'old-remote'},
+        kugou: [{}, {}],
+        preferredPlatform: 1,
+        expectedSiteToken: previous,
+      );
+      await expectLater(importing, throwsFormatException);
+      await switching;
+      expect(accounts.neteaseLoggedIn, isFalse);
+      await expectLater(
+        accounts.update(siteToken: previous, expectedSiteToken: previous),
+        throwsFormatException,
+      );
+      expect(accounts.siteToken, next);
+    },
+  );
+
   test(
     'platform credentials and devices are isolated and restore independently',
     () async {

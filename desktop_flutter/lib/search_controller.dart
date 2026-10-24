@@ -1,12 +1,14 @@
 import 'package:flutter/foundation.dart';
 
 import 'domain/online_music.dart';
+import 'domain/music_plugin.dart';
 
 class SearchController extends ChangeNotifier {
   SearchController(this.catalog);
 
   final MusicCatalog catalog;
   MusicProvider provider = MusicProvider.netease;
+  MusicPluginSource? pluginSource;
   List<OnlineSong> songs = [];
   String keyword = '';
   String? error;
@@ -17,9 +19,27 @@ class SearchController extends ChangeNotifier {
   bool _disposed = false;
 
   void selectProvider(MusicProvider value) {
-    if (value == provider || _disposed) return;
+    if (value == provider && pluginSource == null || _disposed) return;
     _request++;
     provider = value;
+    pluginSource = null;
+    songs = [];
+    keyword = '';
+    error = null;
+    loading = false;
+    hasMore = false;
+    _page = 0;
+    notifyListeners();
+  }
+
+  void selectPlugin(MusicPluginSource source) {
+    if (_disposed || pluginSource?.id == source.id) return;
+    selectProvider(MusicProvider.netease);
+    _request++;
+    provider = MusicProvider.values.firstWhere(
+      (item) => item.gateway == source.platform,
+    );
+    pluginSource = source;
     songs = [];
     keyword = '';
     error = null;
@@ -47,7 +67,14 @@ class SearchController extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final result = await catalog.search(provider, value, page);
+      final source = pluginSource;
+      final result = source == null
+          ? await catalog.search(provider, value, page)
+          : await (catalog as PluginMusicCatalog).searchPlugin(
+              source,
+              value,
+              page,
+            );
       if (_disposed || request != _request) return;
       songs = {
         for (final song in [...songs, ...result.songs]) song.key: song,

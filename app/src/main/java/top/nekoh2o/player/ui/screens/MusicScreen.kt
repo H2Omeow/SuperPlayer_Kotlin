@@ -35,11 +35,18 @@ import top.nekoh2o.player.ui.a11y.clickableRow
 import top.nekoh2o.player.ui.a11y.minTouchTarget
 import top.nekoh2o.player.ui.a11y.toggleSemantics
 import top.nekoh2o.player.ui.theme.NekoDefaults
+import top.nekoh2o.player.data.plugins.PluginStore
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MusicScreen(vm: PlayerViewModel) {
     val state by vm.ui.collectAsState()
+    val plugins by PluginStore.state.collectAsState()
+    var managingPlugins by remember { mutableStateOf(false) }
+    if (managingPlugins) {
+        PluginManagerScreen(onBack = { managingPlugins = false })
+        return
+    }
 
     // 歌手/专辑详情二级界面
     var detailArtist by remember { mutableStateOf<ArtistItem?>(null) }
@@ -84,35 +91,25 @@ fun MusicScreen(vm: PlayerViewModel) {
                 modifier = Modifier.weight(1f)
             )
         }
-        var showUsage by remember { mutableStateOf(false) }
         var showMv by remember { mutableStateOf(false) }
-        if (showUsage) SourceUsageSheet { showUsage = false }
         if (showMv) MvSheet(state.musicSource, state.query, onPauseMusic = { if (state.isPlaying) vm.togglePlay() }, onDismiss = { showMv = false })
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            TextButton(onClick = { showUsage = true }) { Text("音源调用统计") }
-            TextButton(onClick = { showMv = true }) { Text("MV") }
+            if (state.musicSource in listOf("netease", "kugou") || state.musicSource.startsWith("animemusic-")) {
+                TextButton(onClick = { showMv = true }) { Text("MV") }
+            }
+            TextButton(onClick = { managingPlugins = true }) { Text("音源与订阅") }
         }
-        var animemusicExpanded by remember { mutableStateOf(state.musicSource.startsWith("animemusic-")) }
-        FilterChip(
-            selected = state.musicSource.startsWith("animemusic-"),
-            onClick = {
-                animemusicExpanded = !animemusicExpanded
-                if (!state.musicSource.startsWith("animemusic-")) vm.switchMusicSource("animemusic-kg")
-            },
-            label = { Text("惜缘惜梦音源") },
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
-        )
-        if (animemusicExpanded || state.musicSource.startsWith("animemusic-")) {
+        if (PluginStore.sources(plugins).isNotEmpty()) {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(bottom = 4.dp)
             ) {
-                items(top.nekoh2o.player.data.repo.AnimemusicRepository.platforms) { (id, label) ->
+                items(PluginStore.sources(plugins), key = { it.id }) { source ->
                     FilterChip(
-                        selected = state.musicSource == "animemusic-$id",
-                        onClick = { vm.switchMusicSource("animemusic-$id") },
-                        label = { Text(label) }
+                        selected = state.musicSource == source.id,
+                        onClick = { vm.switchMusicSource(source.id) },
+                        label = { Text(source.name) }
                     )
                 }
             }
@@ -632,7 +629,7 @@ private fun songKey(song: Song): String = song.source + ":" + song.hash.ifBlank 
 private fun songSourceLabel(song: Song): String = when {
     song.source == "netease" -> "网易云"
     song.source == "kugou" -> "酷狗"
-    song.source.startsWith("animemusic-") -> "惜缘惜梦·${top.nekoh2o.player.data.repo.AnimemusicRepository.label(song.providerSource)}"
+    song.source.startsWith("animemusic-") -> "内置插件·${top.nekoh2o.player.data.repo.AnimemusicRepository.label(song.providerSource)}"
     else -> song.source
 }
 

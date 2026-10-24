@@ -2,61 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../site_controller.dart';
-import '../data/source_gateway.dart';
-import '../domain/online_music.dart';
 
 class SitePanel extends StatefulWidget {
-  const SitePanel({super.key, required this.controller, this.gateway});
+  const SitePanel({super.key, required this.controller});
   final SiteController controller;
-  final SourceGateway? gateway;
   @override
   State<SitePanel> createState() => _SitePanelState();
 }
 
 class _SitePanelState extends State<SitePanel> {
   bool includeCredentials = false;
-  bool readingUsage = false;
-
-  Future<void> usage() async {
-    if (readingUsage || widget.gateway == null) return;
-    setState(() => readingUsage = true);
-    final token = widget.controller.accounts.siteToken;
-    try {
-      final body = await widget.gateway!.request('usage', {});
-      if (!mounted || token != widget.controller.accounts.siteToken) return;
-      if (body['code'] != 200) throw const MusicSearchException('音源服务未返回有效配额。');
-      int count(String key) => int.tryParse('${body[key]}') ?? 0;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('惜缘音源使用配额'),
-          content: Text(
-            '日期：${body['date'] ?? '未知'}\n每日总额度：${count('limit')}\n已用：${count('used')}\n剩余：${count('remaining')}\n我的今日用量：${count('myToday')}',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
-            ),
-          ],
-        ),
-      );
-    } catch (failure) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              failure is MusicSearchException
-                  ? failure.message
-                  : '配额读取失败，请检查本站登录状态。',
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => readingUsage = false);
-    }
-  }
 
   Future<void> importToken() async {
     final input = TextEditingController();
@@ -136,13 +91,6 @@ class _SitePanelState extends State<SitePanel> {
                     child: const Text('导入令牌'),
                   ),
                   if (accounts.siteToken.isNotEmpty) ...[
-                    if (widget.gateway != null)
-                      TextButton(
-                        onPressed: controller.busy || readingUsage
-                            ? null
-                            : usage,
-                        child: const Text('查看音源配额'),
-                      ),
                     TextButton(
                       onPressed: controller.busy ? null : controller.refresh,
                       child: const Text('验证账号'),

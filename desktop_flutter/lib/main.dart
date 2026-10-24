@@ -8,13 +8,18 @@ import 'data/audio_cache.dart';
 import 'data/library_store.dart';
 import 'data/native_music_catalog.dart';
 import 'data/account_store.dart';
+import 'data/plugin_subscriptions.dart';
+import 'data/plugins/plugin_runtime.dart';
 import 'download_controller.dart';
 import 'playback/effects_playback_engine.dart';
 import 'player_controller.dart';
 import 'ui/neko_app.dart';
+import 'ui/bundled_fonts.dart';
+import 'ui/neko_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerBundledFontLicense();
   try {
     MediaKit.ensureInitialized();
     final accounts = AccountStore(storage: SecureCredentialStorage());
@@ -28,7 +33,18 @@ Future<void> main() async {
       );
       await cache.initialize();
     } catch (_) {}
-    final onlineSource = NativeMusicCatalog(accounts: accounts, cache: cache);
+    final subscriptions = PluginSubscriptions(
+      store: PreferencesPluginStore(SharedPreferencesAsync()),
+      runtime: NativePluginRuntime(
+        store: PreferencesPluginStorage(SharedPreferencesAsync()),
+      ),
+    );
+    await subscriptions.initialize();
+    final onlineSource = NativeMusicCatalog(
+      accounts: accounts,
+      cache: cache,
+      subscriptions: subscriptions,
+    );
     final downloads = DownloadController(
       source: onlineSource,
       store: PreferencesDownloadStore(SharedPreferencesAsync()),
@@ -46,8 +62,9 @@ Future<void> main() async {
     runApp(NekoApp(controller: controller));
   } catch (_) {
     runApp(
-      const MaterialApp(
-        home: Scaffold(
+      MaterialApp(
+        theme: nekoTheme(),
+        home: const Scaffold(
           body: Center(
             child: Padding(
               padding: EdgeInsets.all(32),

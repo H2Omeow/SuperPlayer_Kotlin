@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>NekoPlayer · 动态歌词</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./assets/pony-B-bHcM6j.css">
+  <link rel="stylesheet" href="./host.css">
+  <script defer src="./host.js"></script>
+  <script type="module" src="./assets/pony-CNVZhWRN.js"></script>
+</head>
+<body>
+  <header>
+    <div><strong id="track">NekoPlayer</strong><small id="status" role="status">正在连接播放器…</small></div>
+    <label>歌词样式
+      <select id="mode" aria-label="歌词样式">
+        <option value="classic">经典</option>
+        <option value="sonnet">十四行诗</option>
+        <option value="cappella">清唱</option>
+        <option value="monet">莫奈</option>
+        <option value="still">静谧</option>
+        <option value="partita">组曲</option>
+        <option value="tilt">倾斜</option>
+        <option value="cadenza">华彩</option>
+        <option value="claddagh">克拉达</option>
+        <option value="diorama">微景</option>
+        <option value="fume">烟雾</option>
+        <option value="lumiere">光影</option>
+        <option value="pendolo">钟摆</option>
+        <option value="tempera">蛋彩</option>
+      </select>
+    </label>
+  </header>
+  <main id="root" aria-label="动态歌词"></main>
+</body>
+</html>

@@ -21,6 +21,7 @@ object LyricParser {
 
     private val wordTagRe = Regex("""\(\d+,\d+,\d+\)""")
     private val wordTagCapRe = Regex("""\((\d+),(\d+),(\d+)\)""")
+    private val enhancedTagRe = Regex("""<(\d+):(\d{2})(?:[.:](\d{1,3}))?>""")
 
     fun parse(main: String?, translation: String? = null): List<LyricLine> {
         val ma = parseLines(main)
@@ -78,12 +79,29 @@ object LyricParser {
                 }
             }
 
-            val plain = body.replace(wordTagRe, "").trim()
+            val enhanced = enhancedTagRe.findAll(body).toList()
+            if (tags.isEmpty() && enhanced.isNotEmpty()) {
+                if (enhanced.first().range.first > 0) {
+                    words.add(LyricWord(body.substring(0, enhanced.first().range.first), parseTime(timeStr), 0.0))
+                }
+                for (index in enhanced.indices) {
+                    val tag = enhanced[index]
+                    val next = enhanced.getOrNull(index + 1)
+                    val text = body.substring(tag.range.last + 1, next?.range?.first ?: body.length)
+                    val start = parseTime(tag.value.substring(1, tag.value.length - 1))
+                    val end = next?.let { parseTime(it.value.substring(1, it.value.length - 1)) } ?: (start + 0.5)
+                    if (text.isNotEmpty() && start.isFinite() && end.isFinite()) {
+                        words.add(LyricWord(text, start, (end - start).coerceAtLeast(0.0)))
+                    }
+                }
+            }
+
+            val plain = body.replace(wordTagRe, "").replace(enhancedTagRe, "").trim()
             if (plain.isEmpty()) continue
 
             // 行首时间解析
             val time = parseTime(timeStr)
-            if (time > 0) {
+            if (time.isFinite() && time >= 0) {
                 result.add(
                     LyricLine(
                         time = time,
@@ -100,14 +118,15 @@ object LyricParser {
     private fun parseTime(m: String): Double {
         if (m.contains(',')) {
             val p = m.split(',')
-            return p.getOrNull(0)?.toDoubleOrNull()?.div(1000.0) ?: 0.0
+            return p.getOrNull(0)?.toDoubleOrNull()?.div(1000.0) ?: Double.NaN
         }
         val p = m.split(':')
         if (p.size == 2) {
-            val min = p[0].toDoubleOrNull() ?: return 0.0
-            val sec = p[1].toDoubleOrNull() ?: return 0.0
+            val min = p[0].toDoubleOrNull() ?: return Double.NaN
+            val sec = p[1].toDoubleOrNull() ?: return Double.NaN
+            if (min < 0 || sec < 0 || sec >= 60) return Double.NaN
             return min * 60 + sec
         }
-        return 0.0
+        return Double.NaN
     }
 }
