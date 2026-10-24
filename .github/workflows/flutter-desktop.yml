@@ -172,7 +172,7 @@ jobs:
           if [ "$RUNNER_OS" = Linux ]; then
             flutter build linux --release --no-pub
           else
-            flutter build windows --release --no-pub
+            flutter build windows --release --no-pub --verbose
           fi
       - name: Verify actual bundle architecture
         env:
