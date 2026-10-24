@@ -1,8 +1,11 @@
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
-from package_release import release_version, windows_installer_script
+from package_release import release_version, stage_windows_runtime, windows_installer_script
+from test_artifact import pe
 
 
 class ReleasePackageTests(unittest.TestCase):
@@ -17,6 +20,46 @@ class ReleasePackageTests(unittest.TestCase):
                 self.assertIn(f"OutputBaseFilename=NekoPlayer-v1.1.0-{target}-setup", script)
                 self.assertIn("UninstallDisplayIcon={app}\\NekoPlayer.exe", script)
                 self.assertNotIn("java", script.lower())
+
+    def runtime_fixture(self, root, arch, machine):
+        runtime = root / arch / "Microsoft.VC145.CRT"
+        runtime.mkdir(parents=True)
+        for name in ("msvcp140.dll", "vcruntime140.dll"):
+            (runtime / name).write_bytes(pe(machine))
+        payload = root / "payload"
+        payload.mkdir()
+        (payload / "NekoPlayer.exe").write_bytes(pe(machine))
+        return runtime, payload
+
+    def test_windows_runtime_only_stages_native_architecture_and_checks_imports(self):
+        for arch, machine in (("x64", 0x8664), ("arm64", 0xAA64)):
+            with self.subTest(arch=arch), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                runtime, payload = self.runtime_fixture(root, arch, machine)
+                (runtime / "vcruntime140_1.dll").write_bytes(pe(0x8664))
+                output = "    KERNEL32.dll\n    MSVCP140.dll\n    VCRUNTIME140.dll\n"
+                with patch("package_release.subprocess.run", return_value=subprocess.CompletedProcess([], 0, output)) as inspect:
+                    stage_windows_runtime("windows-" + arch, root, payload)
+                self.assertEqual((payload / "vcruntime140_1.dll").exists(), arch == "x64")
+                self.assertEqual(inspect.call_count, len(list(payload.glob("*"))))
+                self.assertTrue((payload / "msvcp140.dll").is_file())
+
+    def test_windows_runtime_rejects_unfulfilled_native_imports(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime, payload = self.runtime_fixture(root, "arm64", 0xAA64)
+            (runtime / "vcruntime140_1.dll").write_bytes(pe(0x8664))
+            with patch("package_release.subprocess.run", return_value=subprocess.CompletedProcess([], 0, "    VCRUNTIME140_1.dll\n")):
+                with self.assertRaisesRegex(ValueError, "requires missing.*vcruntime140_1.dll"):
+                    stage_windows_runtime("windows-arm64", root, payload)
+
+    def test_windows_runtime_rejects_wrong_architecture_core_libraries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime, payload = self.runtime_fixture(root, "arm64", 0xAA64)
+            (runtime / "msvcp140.dll").write_bytes(pe(0x8664))
+            with self.assertRaisesRegex(ValueError, "redistributables are missing"):
+                stage_windows_runtime("windows-arm64", root, payload)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import subprocess
 import tarfile
 import tempfile
 
-from check_artifact import TARGETS, verify_bundle
+from check_artifact import TARGETS, architecture, verify_bundle
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -132,17 +132,36 @@ Filename: "{{app}}\NekoPlayer.exe"; Description: "Launch NekoPlayer"; Flags: now
 '''
 
 
+def stage_windows_runtime(target, redist, payload):
+    arch = "arm64" if target.endswith("arm64") else "x64"
+    libraries = {
+        library.name.lower(): library
+        for library in sorted((redist / arch).glob("Microsoft.VC*.CRT/*.dll"))
+        if architecture(library) == TARGETS[target]
+    }
+    required = {"msvcp140.dll", "vcruntime140.dll"}
+    if not required <= libraries.keys():
+        raise ValueError(f"Native Visual C++ runtime redistributables are missing: {required - libraries.keys()}")
+    for library in libraries.values():
+        shutil.copy2(library, payload / library.name)
+    for binary in payload.rglob("*"):
+        if binary.suffix.lower() not in (".dll", ".exe"):
+            continue
+        output = subprocess.run(["dumpbin.exe", "/nologo", "/dependents", str(binary)],
+                                check=True, capture_output=True, text=True, errors="replace").stdout
+        dependencies = set(re.findall(r"^\s+((?:vcruntime|msvcp|concrt|vccorlib)[\w.-]*\.dll)\s*$",
+                                      output.lower(), re.MULTILINE))
+        missing = dependencies - libraries.keys()
+        if missing:
+            raise ValueError(f"{binary.name} requires missing native Visual C++ runtime libraries: {sorted(missing)}")
+
+
 def windows_package(target, bundle, output):
     with tempfile.TemporaryDirectory(prefix="nekoplayer-package-") as temporary:
         work = Path(temporary)
         payload = stage_bundle(target, bundle, work / "NekoPlayer")
         redist = Path(os.environ["VCToolsRedistDir"])
-        arch = "arm64" if target.endswith("arm64") else "x64"
-        libraries = list((redist / arch).glob("Microsoft.VC*.CRT/*.dll"))
-        if not libraries:
-            raise ValueError("Native Visual C++ runtime redistributables are missing")
-        for library in libraries:
-            shutil.copy2(library, payload / library.name)
+        stage_windows_runtime(target, redist, payload)
         verify_bundle(target, payload, require_decoders=True)
         source = work / "setup.iss"
         source.write_text(windows_installer_script(target, payload, output), encoding="utf-8-sig")
