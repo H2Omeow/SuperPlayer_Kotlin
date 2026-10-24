@@ -71,6 +71,12 @@ class PluginVmTest(unittest.TestCase):
         self.assertIn("null", self.error(None))
         self.assertEqual(self.value("40+2"), "42")
 
+    def test_float64_arithmetic_and_coercion(self):
+        for script, expected in [("'1.5' - 0.5", "1"), ("'1.5' * 2", "3"),
+                                 ("'3' / 2", "1.5"), ("'3.5' % 2", "1.5"),
+                                 ("'1.5' ** 2", "2.25")]:
+            self.assertEqual(self.value(script), expected)
+
     def test_promise_jobs_and_rejections(self):
         self.value("globalThis.order=[]; Promise.resolve().then(()=>order.push(1)).then(()=>order.push(2)); 'done'")
         self.assertEqual(self.value("order.join(',')"), "1,2")

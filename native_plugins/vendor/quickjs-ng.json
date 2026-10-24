@@ -4,5 +4,6 @@
   "archive": "https://codeload.github.com/quickjs-ng/quickjs/tar.gz/58bdcf0ce35594df30bf5cfbba3be8b454799cc0",
   "archive_sha256": "3f5a43b333b792edace838bfd97d7781c36ea50517098c1fb7e0769ada60ef47",
   "license": "MIT",
-  "sources": ["quickjs.c", "dtoa.c", "libregexp.c", "libunicode.c"]
+  "sources": ["quickjs.c", "dtoa.c", "libregexp.c", "libunicode.c"],
+  "local_changes": ["quickjs.c: add an empty statement after handle_float64 so x86 FPU declarations remain valid in C11"]
 }
